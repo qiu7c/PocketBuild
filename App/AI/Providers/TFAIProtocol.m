@@ -1,0 +1,225 @@
+#import "TFAIProtocol.h"
+#import "TFAIRegistry.h"
+#import <arpa/inet.h>
+NSError *TFAIError(NSInteger code, NSString *message){return [NSError errorWithDomain:@"TweakForge.AI" code:code userInfo:@{NSLocalizedDescriptionKey:message?:@"AI 请求失败"}];}
+NSArray<NSDictionary *> *TFAIProtocolCatalog(void){return TFAIProviderRegistry();}
+// Common gateway envelopes. Never filter model names by vendor/family.
+NSDictionary *TFAIModelPage(id payload){
+ if([payload isKindOfClass:NSArray.class])return @{@"data":payload};
+ if(![payload isKindOfClass:NSDictionary.class])return @{};
+ NSMutableDictionary *page=[payload mutableCopy];for(NSString *wrapper in @[@"data",@"result"]){id nested=page[wrapper];if([nested isKindOfClass:NSDictionary.class]){NSDictionary *inner=TFAIModelPage(nested);[page addEntriesFromDictionary:inner];}}
+ if(![page[@"data"] isKindOfClass:NSArray.class])for(NSString *key in @[@"models",@"items",@"list"]){if([page[key] isKindOfClass:NSArray.class]){page[@"data"]=page[key];break;}}
+ return page;
+}
+static NSString *WireProtocol(NSString *protocol){return TFAIWireProtocol(protocol);}
+// A manual capability belongs to one exact service, protocol and model. It is not
+// evidence that a same-named model on another relay supports the same parameters.
+NSString *TFAIThinkingScope(NSDictionary *c){
+ NSURL *endpoint=TFAIEndpoint(c,NO,NULL);if(!endpoint)return @"";
+ NSData *data=[NSJSONSerialization dataWithJSONObject:@[c[@"protocol"]?:@"chat",endpoint.absoluteString,c[@"model"]?:@""] options:0 error:nil];return [[NSString alloc]initWithData:data encoding:NSUTF8StringEncoding]?:@"";
+}
+NSDictionary *TFAIThinkingConfiguration(NSDictionary *c){
+ NSString *protocol=WireProtocol(c[@"protocol"]?:@"chat"),*model=TFAINormalizedModelID(c[@"model"]),*host=[NSURL URLWithString:c[@"baseURL"]?:@""].host.lowercaseString?:@"";
+ NSArray *family=TFAIFamilyReasoningOptions(c),*levels=[family valueForKey:@"id"];
+ NSMutableArray *familyLevels=[levels mutableCopy];[familyLevels removeObject:@"auto"];levels=familyLevels;
+ NSString *source=@"模型族建议 · 尚未验证当前服务",*wire=@"reasoning_effort";
+ if([protocol isEqual:@"responses"]||([protocol isEqual:@"chat"]&&([c[@"protocol"] isEqual:@"openrouter"]||[host isEqual:@"openrouter.ai"])))wire=@"reasoning";
+ else if([protocol isEqual:@"anthropic"]){BOOL adaptive=[model rangeOfString:@"^claude-(?:(?:opus|sonnet)-4-[6-9]|(?:opus|sonnet)-[5-9])" options:NSRegularExpressionSearch].location!=NSNotFound;wire=adaptive?@"anthropic_adaptive":@"anthropic_budget";}
+ else if([protocol isEqual:@"gemini"])wire=[model hasPrefix:@"gemini-2.5"]?@"gemini_budget":@"gemini_level";
+ else if([host isEqual:@"api.cerebras.ai"]||[host hasSuffix:@".services.ai.azure.com"]||[host isEqual:@"api.venice.ai"]||[host isEqual:@"ark.cn-beijing.volces.com"])wire=@"reasoning_effort";
+ else if([host isEqual:@"api.siliconflow.cn"]||[host isEqual:@"api.siliconflow.com"]||[c[@"protocol"] isEqual:@"siliconflow"]){if([model rangeOfString:@"^(deepseek|qwen|glm|kimi|moonshot)" options:NSRegularExpressionSearch].location!=NSNotFound)wire=@"enable_thinking";}
+ else if([model hasPrefix:@"deepseek"]||[c[@"protocol"] isEqual:@"deepseek"]||[model hasPrefix:@"glm-"]||[model hasPrefix:@"kimi-"]||[model hasPrefix:@"minimax-"]||[model hasPrefix:@"mimo-"])wire=@"thinking";
+ else if([model hasPrefix:@"qwen"])wire=@"enable_thinking";
+ NSDictionary *metadata=TFAIModelMetadata(c),*catalog=TFAICatalogModelMetadata(c);
+ NSString *declaredWire=metadata[@"thinkingWire"],*control=metadata[@"reasoningControl"];
+ if([TFAIThinkingWires(c[@"protocol"]) containsObject:declaredWire?:@""])wire=declaredWire;
+ NSString *declaredThinking=metadata[@"capabilities"][@"thinking"];
+ BOOL explicitlyOff=[declaredThinking isEqual:@"unsupported"];
+ BOOL fixed=[control isEqual:@"fixed"];
+ if([metadata[@"efforts"] count]){levels=metadata[@"efforts"];source=@"当前服务声明的思考档位 · 测试不是启用条件";}
+ else if(control||declaredWire||declaredThinking){source=@"当前服务模型列表声明 · 尚未实测";}
+ else {
+  if([catalog[@"efforts"] count]){levels=catalog[@"efforts"];source=catalog[@"source"];}
+  if([catalog[@"authoritative"] boolValue]){
+   control=catalog[@"reasoningControl"];fixed=[control isEqual:@"fixed"];
+   explicitlyOff=[catalog[@"capabilities"][@"thinking"] isEqual:@"unsupported"];
+   if(control||explicitlyOff)source=catalog[@"source"];
+  }
+ }
+ // Known fixed-reasoning models do not gain an invented effort dial. A relay's
+ // explicit declaration or manual adapter may still override this family hint.
+ if(!declaredThinking&&!declaredWire&&![metadata[@"efforts"] count]&&[model rangeOfString:@"^(?:deepseek-reasoner|deepseek-r1)(?:$|-)" options:NSRegularExpressionSearch].location!=NSNotFound)fixed=YES;
+ NSDictionary *map=[c[@"thinkingOverrides"] isKindOfClass:NSDictionary.class]?c[@"thinkingOverrides"]:@{};
+ id raw=map[TFAIThinkingScope(c)];NSDictionary *override=[raw isKindOfClass:NSDictionary.class]?raw:nil;
+ BOOL manual=override&&[TFAIThinkingWires(c[@"protocol"]) containsObject:override[@"wire"]?:@""];
+ if(manual){wire=override[@"wire"];levels=[override[@"levels"] isKindOfClass:NSArray.class]?override[@"levels"]:@[];source=@"当前连接手动配置 · 仅作用于此端点、协议与模型";explicitlyOff=NO;fixed=NO;}
+ else if(explicitlyOff||fixed){levels=@[];source=explicitlyOff?@"当前服务或目录声明不支持思考，可手动适配":@"模型自行思考，未声明可调档位；可手动适配";}
+ else {
+  BOOL toggle=[@[@"enable_thinking",@"chat_template_kwargs"] containsObject:wire];
+  BOOL enabledOnly=[levels containsObject:@"enabled"]||[familyLevels containsObject:@"enabled"];
+  if(toggle&&(levels.count||[declaredThinking isEqual:@"supported"]||[control isEqual:@"toggle"]))levels=@[@"none",@"enabled"];
+  else if([wire isEqual:@"thinking"]&&([control isEqual:@"toggle"]||enabledOnly))levels=@[@"none",@"enabled"];
+  // A hybrid thinking.type switch remains usable even when the catalog also
+  // supplies effort tiers. "enabled" emits only the switch, not a fake effort.
+  if([wire isEqual:@"thinking"]&&(enabledOnly||[declaredWire isEqual:@"thinking"]||[control isEqual:@"toggle"])){NSMutableOrderedSet *choices=[NSMutableOrderedSet orderedSetWithArray:levels];[choices addObject:@"none"];[choices addObject:@"enabled"];levels=choices.array;}
+  if(!levels.count){
+   if([wire isEqual:@"thinking"])levels=@[@"none",@"enabled"];
+   else if(toggle)levels=@[@"none",@"enabled"];
+   else levels=@[@"low",@"medium",@"high"];
+   source=[declaredThinking isEqual:@"supported"]?@"服务声明支持思考 · 按协议提供兼容控制，未实测":@"协议兼容选项 · 能力未声明，按需尝试；默认不发送参数";
+  }
+ }
+ NSDictionary *names=@{@"none":@"关闭思考",@"minimal":@"最少",@"low":@"轻",@"medium":@"中",@"high":@"高",@"xhigh":@"极高",@"ultra":@"Ultra",@"max":@"最高",@"enabled":@"开启思考"};
+ NSMutableArray *options=[NSMutableArray arrayWithObject:@{@"id":@"auto",@"name":@"默认"}];
+ for(NSString *level in @[@"none",@"minimal",@"low",@"medium",@"high",@"xhigh",@"ultra",@"max",@"enabled"]){
+  if(![levels containsObject:level]||![TFAIThinkingLevelsForWire(wire) containsObject:level])continue;
+  [options addObject:@{@"id":level,@"name":names[level]}];
+ }
+ if([wire isEqual:@"disabled"])source=@"手动关闭思考参数 · 使用服务默认行为";
+ return @{@"options":options,@"source":source,@"wire":wire,@"scope":TFAIThinkingScope(c),@"manual":@(manual)};
+}
+static void TFApplyThinking(NSMutableDictionary *body,NSDictionary *c,NSString *effort){
+ NSString *wire=TFAIThinkingConfiguration(c)[@"wire"];BOOL off=[effort isEqual:@"none"];
+ NSInteger budget=[effort isEqual:@"low"]?1024:[effort isEqual:@"medium"]?4096:8192;
+ if([wire isEqual:@"reasoning_effort"])body[@"reasoning_effort"]=effort;
+ else if([wire isEqual:@"reasoning"]){NSMutableDictionary *r=[body[@"reasoning"] mutableCopy]?:[NSMutableDictionary new];r[@"effort"]=effort;body[@"reasoning"]=r;}
+ else if([wire isEqual:@"enable_thinking"])body[@"enable_thinking"]=@(!off);
+ else if([wire isEqual:@"chat_template_kwargs"])body[@"chat_template_kwargs"]=@{@"enable_thinking":@(!off)};
+ else if([wire isEqual:@"thinking"]){body[@"thinking"]=@{@"type":off?@"disabled":@"enabled"};if(!off&&![effort isEqual:@"enabled"])body[@"reasoning_effort"]=effort;}
+ else if([wire isEqual:@"thinking_budget"]){body[@"enable_thinking"]=@YES;body[@"thinking_budget"]=@(budget);body[@"max_tokens"]=@16384;}
+ else if([wire isEqual:@"anthropic_budget"]){body[@"thinking"]=@{@"type":@"enabled",@"budget_tokens":@(budget)};body[@"max_tokens"]=@16384;}
+ else if([wire isEqual:@"anthropic_adaptive"]){body[@"thinking"]=@{@"type":@"adaptive"};body[@"output_config"]=@{@"effort":effort};}
+ else if([wire isEqual:@"gemini_budget"]||[wire isEqual:@"gemini_level"]){NSMutableDictionary *generation=[body[@"generationConfig"] mutableCopy]?:[NSMutableDictionary new];NSMutableDictionary *thinking=[@{@"includeThoughts":@YES} mutableCopy];thinking[[wire isEqual:@"gemini_budget"]?@"thinkingBudget":@"thinkingLevel"]=[wire isEqual:@"gemini_budget"]?(id)@(budget):(id)effort;generation[@"thinkingConfig"]=thinking;body[@"generationConfig"]=generation;}
+}
+NSArray<NSDictionary *> *TFAIReasoningOptions(NSDictionary *c){return TFAIThinkingConfiguration(c)[@"options"];}
+NSString *TFAIValidatedReasoningEffort(NSDictionary *c,NSString *effort){return [[TFAIReasoningOptions(c) valueForKey:@"id"] containsObject:effort?:@"auto"]?(effort?:@"auto"):@"auto";}
+NSString *TFAIReasoningRequestSummary(NSDictionary *body,NSDictionary *c){
+ NSMutableDictionary *parameters=[NSMutableDictionary new];for(NSString *key in @[@"reasoning_effort",@"reasoning",@"thinking",@"enable_thinking",@"thinking_budget",@"chat_template_kwargs",@"output_config"])if(body[key])parameters[key]=body[key];id generation=body[@"generationConfig"];if([generation isKindOfClass:NSDictionary.class]&&generation[@"thinkingConfig"])parameters[@"thinkingConfig"]=generation[@"thinkingConfig"];
+ NSData *data=[NSJSONSerialization dataWithJSONObject:parameters options:NSJSONWritingSortedKeys error:nil];NSString *json=[[NSString alloc]initWithData:data encoding:NSUTF8StringEncoding]?:@"{}";
+ return [NSString stringWithFormat:@"%@；实际发送：%@",TFAIThinkingConfiguration(c)[@"source"],json];
+}
+NSDictionary *TFAISanitizeProbeDiagnostics(NSDictionary *input,NSString *secret){if(![input isKindOfClass:NSDictionary.class])return @{};NSMutableDictionary *out=[NSMutableDictionary new];NSSet *numbers=[NSSet setWithArray:@[@"timestamp",@"duration",@"httpStatus"]];for(NSString *key in @[@"protocol",@"model",@"endpoint",@"httpStatus",@"requestSummary",@"responseText",@"responseBody",@"timestamp",@"duration",@"expected",@"reason",@"testImage",@"reasoningSummary"]){id value=input[key];if([numbers containsObject:key]){if([value isKindOfClass:NSNumber.class]&&isfinite([value doubleValue]))out[key]=value;continue;}if(![value isKindOfClass:NSString.class])continue;NSString *text=value;if([key isEqual:@"testImage"]){NSData *data=[[NSData alloc]initWithBase64EncodedString:text options:0];if(data.length<=128*1024&&data.length>8&&memcmp(data.bytes,"\x89PNG\r\n\x1a\n",8)==0)out[key]=text;continue;}if([key isEqual:@"endpoint"]){NSURLComponents *u=[NSURLComponents componentsWithString:text];if(!u.host.length)continue;u.user=nil;u.password=nil;u.query=nil;u.fragment=nil;text=u.URL.absoluteString?:@"";}if(secret.length)text=[text stringByReplacingOccurrencesOfString:secret withString:@"[REDACTED]"];for(NSString *pattern in @[@"(?i)(bearer\\s+)[A-Za-z0-9._~+/-]+",@"(?i)(api[_-]?key|authorization|access[_-]?token|token|secret)([\\\"' :=]+)[A-Za-z0-9._~+/-]{6,}",@"(?i)(sk-|github_pat_|AIza)[A-Za-z0-9_-]{12,}"]){NSRegularExpression *rx=[NSRegularExpression regularExpressionWithPattern:pattern options:0 error:nil];text=[rx stringByReplacingMatchesInString:text options:0 range:NSMakeRange(0,text.length) withTemplate:@"[REDACTED]"];}NSUInteger max=[key isEqual:@"responseBody"]?16000:8000;out[key]=[text substringToIndex:MIN(text.length,max)];}return out;}
+static BOOL LocalHost(NSString *host){
+ NSString *h=host.lowercaseString;if([h hasPrefix:@"["]&&[h hasSuffix:@"]"])h=[h substringWithRange:NSMakeRange(1,h.length-2)];
+ if([h isEqual:@"localhost"]||[h hasSuffix:@".local"])return YES;
+ struct in_addr a;if(inet_pton(AF_INET,h.UTF8String,&a)==1){uint32_t v=ntohl(a.s_addr);return (v>>24)==10||(v>>24)==127||(v>>16)==0xc0a8||(v>>20)==0xac1||(v>>16)==0xa9fe;}
+ // Literal IPv6 loopback, unique-local, link-local and IPv4-mapped addresses.
+ struct in6_addr v6;if(inet_pton(AF_INET6,h.UTF8String,&v6)==1){if(IN6_IS_ADDR_LOOPBACK(&v6)||(v6.s6_addr[0]&0xfe)==0xfc||(v6.s6_addr[0]==0xfe&&(v6.s6_addr[1]&0xc0)==0x80))return YES;if(IN6_IS_ADDR_V4MAPPED(&v6)){char ip[INET_ADDRSTRLEN];inet_ntop(AF_INET,v6.s6_addr+12,ip,sizeof(ip));return LocalHost([NSString stringWithUTF8String:ip]);}}
+ return NO;
+}
+NSDictionary *TFAIValidatedCustomHeaders(id raw,NSError **error){
+ if(!raw)return @{};
+ if(![raw isKindOfClass:NSDictionary.class]||[raw count]>32){if(error)*error=TFAIError(5,@"请求头必须是 JSON 对象，最多 32 项。");return nil;}
+ NSCharacterSet *names=[[NSCharacterSet characterSetWithCharactersInString:@"!#$%&'*+-.^_`|~0123456789abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ"] invertedSet];
+ NSSet *reserved=[NSSet setWithArray:@[@"host",@"content-length",@"transfer-encoding",@"connection",@"proxy-connection",@"proxy-authorization",@"trailer",@"te",@"upgrade",@"accept-encoding",@"content-type",@"accept",@"user-agent"]];
+ NSMutableDictionary *out=[NSMutableDictionary new];NSMutableSet *seen=[NSMutableSet new];NSUInteger total=0;
+ for(id name in raw){id value=raw[name];if(![name isKindOfClass:NSString.class]||![name length]||[name length]>128||[name rangeOfCharacterFromSet:names].location!=NSNotFound||![value isKindOfClass:NSString.class]){if(error)*error=TFAIError(5,@"请求头名称须为合法 HTTP 字段名，值须为单行字符串。");return nil;}
+ NSString *lower=[name lowercaseString];if([reserved containsObject:lower]||[seen containsObject:lower]){if(error)*error=TFAIError(5,@"不能重复请求头或覆盖传输字段；User-Agent 请使用专用设置。");return nil;}
+ for(NSUInteger i=0;i<[value length];i++){unichar ch=[value characterAtIndex:i];if(ch<32||ch>126){if(error)*error=TFAIError(5,@"请求头值只接受可打印 ASCII，不能含换行或控制字符。");return nil;}}
+ total+=[name length]+[value length];if([value length]>4096||total>16384){if(error)*error=TFAIError(5,@"单个请求头值最多 4096 字符，总大小最多 16 KiB。");return nil;}[seen addObject:lower];out[name]=value;
+ }
+ return out;
+}
+NSString *TFAIUserAgent(NSDictionary *c,NSError **error){id raw=c[@"userAgent"];if(!raw)return @"";if(![raw isKindOfClass:NSString.class]||[raw length]>512){if(error)*error=TFAIError(4,@"User-Agent 请填写 512 字符以内的单行英文文本。");return nil;}for(NSUInteger i=0;i<[raw length];i++){unichar ch=[raw characterAtIndex:i];if(ch<32||ch>126){if(error)*error=TFAIError(4,@"User-Agent 仅接受可打印 ASCII 字符，请去掉换行和特殊字符。");return nil;}}return [raw stringByTrimmingCharactersInSet:NSCharacterSet.whitespaceCharacterSet];}
+NSURL *TFAIEndpoint(NSDictionary *c,BOOL models,NSError **error){
+ NSString *raw=[c[@"baseURL"] isKindOfClass:NSString.class]?c[@"baseURL"]:@"";NSURLComponents *u=[NSURLComponents componentsWithString:[raw stringByTrimmingCharactersInSet:NSCharacterSet.whitespaceAndNewlineCharacterSet]];
+ BOOL tls=[u.scheme.lowercaseString isEqual:@"https"],http=[u.scheme.lowercaseString isEqual:@"http"]&&([c[@"allowHTTP"] boolValue]||([c[@"allowLANHTTP"] boolValue]&&LocalHost(u.host)));
+ if(!u.host.length||(!tls&&!http)||u.user.length||u.password.length||u.query.length||u.fragment.length||([c[@"authMethod"] isEqual:@"oauth"]&&!tls)){if(error)*error=TFAIError(1,@"请填写 HTTPS Base URL，或为此连接明确启用 HTTP。地址中请勿携带账号、密钥或查询参数；官方 OAuth 使用 HTTPS。");return nil;}
+ NSString *p=u.path?:@"";while([p hasSuffix:@"/"])p=[p substringToIndex:p.length-1];
+ for(NSString *end in @[@"/chat/completions",@"/responses",@"/messages",@"/models"])if([p hasSuffix:end]){p=[p substringToIndex:p.length-end.length];break;}
+ NSString *original=c[@"protocol"]?:@"chat",*protocol=WireProtocol(original);if(!p.length)p=[original isEqual:@"gemini"]?@"/v1beta":[original isEqual:@"deepseek"]?@"":@"/v1";
+ if(![@[@"chat",@"responses",@"anthropic",@"gemini"] containsObject:protocol]){if(error)*error=TFAIError(2,@"未知模型协议");return nil;}
+ if([protocol isEqual:@"gemini"]){if(models)u.path=[p stringByAppendingString:@"/models"];else{NSString *model=[c[@"model"] isKindOfClass:NSString.class]?c[@"model"]:@"";if([model hasPrefix:@"models/"])model=[model substringFromIndex:7];if(!model.length)model=@"__select_model__";NSCharacterSet *allowed=[NSCharacterSet characterSetWithCharactersInString:@"abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789-_."];if([model rangeOfCharacterFromSet:allowed.invertedSet].location!=NSNotFound){if(error)*error=TFAIError(3,@"Gemini 模型 ID 含有无效路径字符");return nil;}u.path=[NSString stringWithFormat:@"%@/models/%@:generateContent",p,model];}return u.URL;}
+ u.path=[p stringByAppendingString:models?@"/models":[protocol isEqual:@"responses"]?@"/responses":[protocol isEqual:@"anthropic"]?@"/messages":@"/chat/completions"];return u.URL;
+}
+static NSString *Str(id value){return [value isKindOfClass:NSString.class]?value:@"";}
+// Report only bounded machine codes, never relay raw gateway messages/credentials.
+static NSString *ResponsesFailure(NSDictionary *response){
+ NSString *reason=[response[@"incomplete_details"] isKindOfClass:NSDictionary.class]?Str(response[@"incomplete_details"][@"reason"]):@"";
+ NSString *code=[response[@"error"] isKindOfClass:NSDictionary.class]?Str(response[@"error"][@"code"]):@"";
+ if([reason isEqual:@"max_output_tokens"])return @"Responses 输出额度已耗尽（包含模型思考和正文），本轮工具未执行。可降低思考强度或拆分任务后继续；已完成的操作不会自动重放。";
+ if([reason isEqual:@"content_filter"])return @"Responses 服务端因内容过滤提前结束，本轮工具未执行；请调整请求内容。";
+ NSString *detail=@"服务端未提供原因";NSString *value=reason.length?reason:code;
+ NSCharacterSet *allowed=[NSCharacterSet characterSetWithCharactersInString:@"abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789_-. "];
+ if(value.length&&value.length<=80&&[value rangeOfCharacterFromSet:allowed.invertedSet].location==NSNotFound)detail=value;
+ return [NSString stringWithFormat:@"Responses 服务端返回 %@（%@），本轮工具未执行。可检查供应商日志或切换其支持的 Chat Completions 协议；不会自动重试扣费。",Str(response[@"status"]).length?Str(response[@"status"]):@"未完成状态",detail];
+}
+static NSString *JSONText(id o){NSData *d=[NSJSONSerialization dataWithJSONObject:o?:@{} options:NSJSONWritingSortedKeys error:nil];return d?[[NSString alloc]initWithData:d encoding:NSUTF8StringEncoding]:@"{}";}
+static NSDictionary *TFAIGeminiRequest(NSArray *messages,NSDictionary *c,NSArray *tools,NSError **error){
+ NSMutableArray *contents=[NSMutableArray new],*system=[NSMutableArray new];NSMutableDictionary *callNames=[NSMutableDictionary new],*nativeIDs=[NSMutableDictionary new];NSUInteger bytes=0;NSString *model=Str(c[@"model"]);
+ for(NSDictionary *m in messages){if(![m isKindOfClass:NSDictionary.class])continue;NSString *role=Str(m[@"role"]),*text=Str(m[@"content"]);if([role isEqual:@"system"]){if(text.length)[system addObject:@{@"text":text}];continue;}if(![@[@"user",@"assistant",@"tool"] containsObject:role])continue;NSMutableArray *parts=[NSMutableArray new];BOOL native=NO;
+ if([role isEqual:@"assistant"]){for(NSDictionary *call in m[@"tool_calls"])if([call isKindOfClass:NSDictionary.class])callNames[Str(call[@"id"])]=Str(call[@"name"]);if([m[@"providerProtocol"] isEqual:@"gemini"]&&[m[@"providerModel"] isEqual:model]&&[m[@"providerConnectionID"] isEqual:c[@"id"]])for(NSDictionary *item in m[@"provider_items"])if([item[@"type"] isEqual:@"gemini_content"]&&[item[@"parts"] isKindOfClass:NSArray.class]){for(NSDictionary *part in item[@"parts"]){if(![part isKindOfClass:NSDictionary.class])continue;NSMutableDictionary *safe=[NSMutableDictionary new];for(NSString *key in @[@"text",@"thought",@"thoughtSignature",@"functionCall"])if(part[key])safe[key]=part[key];if(safe.count)[parts addObject:safe];}for(NSDictionary *call in item[@"calls"])if(Str(call[@"nativeID"]).length)nativeIDs[Str(call[@"id"])]=call[@"nativeID"];native=parts.count>0;}}
+ if([role isEqual:@"tool"]){NSString *identifier=Str(m[@"tool_call_id"]),*name=callNames[identifier];if(!name.length){if(error)*error=TFAIError(30,@"Gemini 工具结果缺少对应调用名称，请新建会话后重试");return nil;}id object=[NSJSONSerialization JSONObjectWithData:[text dataUsingEncoding:NSUTF8StringEncoding] options:0 error:nil];NSMutableDictionary *response=[@{@"name":name,@"response":[object isKindOfClass:NSDictionary.class]?object:@{@"result":text}} mutableCopy];if(nativeIDs[identifier])response[@"id"]=nativeIDs[identifier];[parts addObject:@{@"functionResponse":response}];}
+ else if(!native){if(text.length)[parts addObject:@{@"text":text}];for(NSDictionary *im in m[@"images"]){NSString *data=Str(im[@"data"]),*mime=Str(im[@"mime"]);bytes+=data.length;if(![@[@"image/png",@"image/jpeg",@"image/webp",@"image/gif"] containsObject:mime]||![[NSData alloc]initWithBase64EncodedString:data options:0]||bytes>12*1024*1024){if(error)*error=TFAIError(4,@"图片格式或编码大小无效");return nil;}[parts addObject:@{@"inlineData":@{@"mimeType":mime,@"data":data}}];}for(NSDictionary *call in m[@"tool_calls"]){NSString *name=Str(call[@"name"]);if(!name.length||![call[@"arguments"] isKindOfClass:NSDictionary.class]){if(error)*error=TFAIError(30,@"工具调用格式有误");return nil;}[parts addObject:@{@"functionCall":@{@"name":name,@"args":call[@"arguments"]}}];}}
+ if(!parts.count)continue;NSString *wireRole=[role isEqual:@"assistant"]?@"model":@"user";NSMutableDictionary *last=contents.lastObject;if([last[@"role"] isEqual:wireRole])[(NSMutableArray *)last[@"parts"] addObjectsFromArray:parts];else[contents addObject:[@{@"role":wireRole,@"parts":parts} mutableCopy]];
+ }
+ NSMutableDictionary *body=[@{@"contents":contents,@"generationConfig":[@{@"maxOutputTokens":@4096} mutableCopy]} mutableCopy];if(system.count)body[@"systemInstruction"]=@{@"parts":system};NSString *effort=Str(c[@"reasoningEffort"]);if(effort.length&&![effort isEqual:@"auto"]){if(![[TFAIReasoningOptions(c) valueForKey:@"id"] containsObject:effort]){if(error)*error=TFAIError(5,@"当前 Gemini 适配不包含所选思考档位，请刷新档位或调整接口");return nil;}TFApplyThinking(body,c,effort);}
+ if(tools.count&&TFAIToolsAllowed(c)){NSMutableArray *functions=[NSMutableArray new];for(NSDictionary *tool in tools){NSMutableDictionary *f=[tool mutableCopy];NSDictionary *schema=f[@"parameters"];if(schema){[f removeObjectForKey:@"parameters"];f[@"parametersJsonSchema"]=schema;}[functions addObject:f];}body[@"tools"]=@[@{@"functionDeclarations":functions}];if([c[@"_probeToolName"] isEqual:@"probe_ping"])body[@"toolConfig"]=@{@"functionCallingConfig":@{@"mode":@"ANY",@"allowedFunctionNames":@[@"probe_ping"]}};}return body;
+}
+NSDictionary *TFAIRequestBody(NSArray *messages,NSDictionary *c,NSArray *tools,BOOL stream,NSError **error){
+ NSString *model=Str(c[@"model"]),*original=c[@"protocol"]?:@"chat",*protocol=WireProtocol(original);if(!model.length){if(error)*error=TFAIError(3,@"请先选择或填写模型 ID");return nil;}
+ if(!TFAIImagesAllowed(c))for(NSDictionary *message in messages)if([message[@"images"] count]){if(error)*error=TFAIError(32,@"当前模型已禁用图片，或当前服务声明不支持图片。请在模型能力中调整配置或选择支持图片的模型；原图片与会话保留。");return nil;}
+ if([protocol isEqual:@"gemini"])return TFAIGeminiRequest(messages,c,tools,error);NSMutableDictionary *body=[@{@"model":model,@"stream":@(stream)} mutableCopy];if([protocol isEqual:@"chat"]&&stream&&![c[@"omitStreamUsage"] boolValue])body[@"stream_options"]=@{@"include_usage":@YES};NSMutableArray *out=[NSMutableArray new];NSMutableArray *system=[NSMutableArray new];NSUInteger imageBytes=0;
+ for(id entry in messages){if(![entry isKindOfClass:NSDictionary.class])continue;NSDictionary *m=entry;NSString *role=Str(m[@"role"]),*text=Str(m[@"content"]);if(![@[@"system",@"user",@"assistant",@"tool"] containsObject:role])continue;NSArray *calls=[m[@"tool_calls"] isKindOfClass:NSArray.class]?m[@"tool_calls"]:@[];NSMutableArray *images=[NSMutableArray new];
+  for(id item in ([m[@"images"] isKindOfClass:NSArray.class]?m[@"images"]:@[])){if(![item isKindOfClass:NSDictionary.class])continue;NSString *data=Str(item[@"data"]),*mime=Str(item[@"mime"]);if(![@[@"image/png",@"image/jpeg",@"image/webp",@"image/gif"] containsObject:mime]||!data.length||![[NSData alloc]initWithBase64EncodedString:data options:0]){if(error)*error=TFAIError(4,@"图片附件格式无效");return nil;}imageBytes+=data.length;if(imageBytes>12*1024*1024){if(error)*error=TFAIError(4,@"图片附件超过 12 MB 编码上限，请减少图片");return nil;}[images addObject:@{@"data":data,@"mime":mime}];}
+  if([protocol isEqual:@"chat"]){NSMutableDictionary *v=[@{@"role":role,@"content":text} mutableCopy];if(images.count){NSMutableArray *parts=[NSMutableArray arrayWithObject:@{@"type":@"text",@"text":text}];for(NSDictionary *im in images)[parts addObject:@{@"type":@"image_url",@"image_url":@{@"url":[NSString stringWithFormat:@"data:%@;base64,%@",im[@"mime"],im[@"data"]]}}];v[@"content"]=parts;}if([role isEqual:@"tool"])v[@"tool_call_id"]=Str(m[@"tool_call_id"]);if(([original isEqual:@"deepseek"]||[model.lowercaseString.lastPathComponent hasPrefix:@"deepseek"])&&[role isEqual:@"assistant"]&&[m[@"providerProtocol"] isEqual:original]&&[m[@"providerModel"] isEqual:model]&&[m[@"providerConnectionID"] isEqual:c[@"id"]])for(NSDictionary *item in m[@"provider_items"])if([item[@"type"] isEqual:@"deepseek_reasoning"])v[@"reasoning_content"]=Str(item[@"content"]);if(calls.count){NSMutableArray *list=[NSMutableArray new];for(NSDictionary *call in calls)[list addObject:@{@"id":Str(call[@"id"]),@"type":@"function",@"function":@{@"name":Str(call[@"name"]),@"arguments":JSONText(call[@"arguments"])}}];v[@"tool_calls"]=list;}[out addObject:v];}
+  else if([protocol isEqual:@"responses"]){if([role isEqual:@"assistant"]&&[m[@"providerProtocol"] isEqual:@"responses"]&&[m[@"providerModel"] isEqual:model]&&[m[@"providerConnectionID"] isEqual:c[@"id"]]){for(id raw in ([m[@"provider_items"] isKindOfClass:NSArray.class]?m[@"provider_items"]:@[])){if([raw isKindOfClass:NSDictionary.class]&&[raw[@"type"] isEqual:@"reasoning"]&&Str(raw[@"encrypted_content"]).length){[out addObject:@{@"type":@"reasoning",@"id":Str(raw[@"id"]),@"summary":@[],@"encrypted_content":raw[@"encrypted_content"]}];}}}if([role isEqual:@"tool"]){[out addObject:@{@"type":@"function_call_output",@"call_id":Str(m[@"tool_call_id"]),@"output":text}];continue;}if(text.length||images.count){NSMutableArray *parts=[NSMutableArray new];if(text.length)[parts addObject:@{@"type":[role isEqual:@"assistant"]?@"output_text":@"input_text",@"text":text}];for(NSDictionary *im in images)[parts addObject:@{@"type":@"input_image",@"image_url":[NSString stringWithFormat:@"data:%@;base64,%@",im[@"mime"],im[@"data"]]}];[out addObject:@{@"role":role,@"content":parts}];}for(NSDictionary *call in calls)[out addObject:@{@"type":@"function_call",@"call_id":Str(call[@"id"]),@"name":Str(call[@"name"]),@"arguments":JSONText(call[@"arguments"])}];}
+  else {if([role isEqual:@"system"]){[system addObject:text];continue;}NSMutableArray *parts=[NSMutableArray new];if([role isEqual:@"tool"]){role=@"user";[parts addObject:@{@"type":@"tool_result",@"tool_use_id":Str(m[@"tool_call_id"]),@"content":text}];}else{if(text.length)[parts addObject:@{@"type":@"text",@"text":text}];for(NSDictionary *im in images)[parts addObject:@{@"type":@"image",@"source":@{@"type":@"base64",@"media_type":im[@"mime"],@"data":im[@"data"]}}];for(NSDictionary *call in calls)[parts addObject:@{@"type":@"tool_use",@"id":Str(call[@"id"]),@"name":Str(call[@"name"]),@"input":call[@"arguments"]?:@{}}];}if(!parts.count)continue;NSMutableDictionary *last=out.lastObject;if([last[@"role"] isEqual:role])[(NSMutableArray *)last[@"content"] addObjectsFromArray:parts];else[out addObject:[@{@"role":role,@"content":parts} mutableCopy]];}
+ }
+ body[[protocol isEqual:@"responses"]?@"input":@"messages"]=out;
+ if([protocol isEqual:@"responses"]){body[@"store"]=@NO;if([Str(c[@"model"]).lowercaseString hasPrefix:@"gpt-5"]||[Str(c[@"model"]).lowercaseString hasPrefix:@"o3"]||[Str(c[@"model"]).lowercaseString hasPrefix:@"o4-mini"])body[@"reasoning"]=@{@"summary":@"auto"};body[@"include"]=@[@"reasoning.encrypted_content"];body[@"max_output_tokens"]=@16384;}
+ NSString *effort=Str(c[@"reasoningEffort"]);BOOL requested=effort.length&&![effort isEqual:@"auto"];if([protocol isEqual:@"anthropic"]){body[@"max_tokens"]=@4096;if(system.count)body[@"system"]=[system componentsJoinedByString:@"\n\n"];}
+ if(requested){if(![[TFAIReasoningOptions(c) valueForKey:@"id"] containsObject:effort]){if(error)*error=TFAIError(5,@"当前适配不包含所选思考档位，请刷新档位或在模型能力中调整接口");return nil;}
+ TFApplyThinking(body,c,effort);
+ }
+ if(tools.count&&TFAIToolsAllowed(c)){NSMutableArray *encoded=[NSMutableArray new];for(NSDictionary *tool in tools){if([protocol isEqual:@"chat"])[encoded addObject:@{@"type":@"function",@"function":tool}];else if([protocol isEqual:@"responses"]){NSMutableDictionary *f=[tool mutableCopy];f[@"type"]=@"function";f[@"strict"]=@NO;[encoded addObject:f];}else [encoded addObject:@{@"name":tool[@"name"]?:@"",@"description":tool[@"description"]?:@"",@"input_schema":tool[@"parameters"]?:@{@"type":@"object"}}];}body[@"tools"]=encoded;if([c[@"_probeToolName"] isEqual:@"probe_ping"]){body[@"tool_choice"]=[protocol isEqual:@"chat"]?@{@"type":@"function",@"function":@{@"name":@"probe_ping"}}:[protocol isEqual:@"responses"]?@{@"type":@"function",@"name":@"probe_ping"}:@{@"type":@"tool",@"name":@"probe_ping"};}}
+ if([protocol isEqual:@"anthropic"]&&[NSUserDefaults.standardUserDefaults boolForKey:@"Dylix.AI.AnthropicCache"]&&[[NSURL URLWithString:Str(c[@"baseURL"])].host.lowercaseString isEqual:@"api.anthropic.com"]&&!c[@"_probeToolName"]&&system.count){
+  NSMutableArray *blocks=[NSMutableArray new];BOOL marked=NO;
+  for(NSString *text in system){NSRange snapshot=[text rangeOfString:@"【本轮环境快照】"];if(!marked&&snapshot.location!=NSNotFound&&snapshot.location>0){[blocks addObject:@{@"type":@"text",@"text":[text substringToIndex:snapshot.location],@"cache_control":@{@"type":@"ephemeral"}}];[blocks addObject:@{@"type":@"text",@"text":[text substringFromIndex:snapshot.location]}];marked=YES;}else if(text.length)[blocks addObject:@{@"type":@"text",@"text":text}];}
+  if(!marked&&blocks.count){NSMutableDictionary *last=[blocks.lastObject mutableCopy];last[@"cache_control"]=@{@"type":@"ephemeral"};blocks[blocks.count-1]=last;}if(blocks.count)body[@"system"]=blocks;
+ }
+ return body;
+}
+@interface TFAIStreamDecoder ()
+@property NSString *protocol;
+@property(copy) TFAIEvent event;
+@property NSMutableData *buffer;
+@property NSMutableArray<NSString *> *dataLines;
+@property NSMutableDictionary *calls;
+@property NSMutableSet *emittedIDs;
+@property NSMutableSet *sequences;
+@property NSMutableDictionary *reasoning;
+@property NSMutableSet *summaryIDs;
+@property NSMutableArray *geminiParts;
+@property NSMutableArray *geminiCalls;
+@property NSMutableString *deepseekReasoning;
+@property BOOL ended;
+@property BOOL sawFinish;
+@property NSUInteger bytes;
+@property NSUInteger frames;
+@end
+@implementation TFAIStreamDecoder
+- (instancetype)initWithProtocol:(NSString *)protocol event:(TFAIEvent)event{if((self=[super init])){_protocol=protocol;_event=[event copy];_buffer=[NSMutableData new];_dataLines=[NSMutableArray new];_calls=[NSMutableDictionary new];_emittedIDs=[NSMutableSet new];_sequences=[NSMutableSet new];_reasoning=[NSMutableDictionary new];_summaryIDs=[NSMutableSet new];_geminiParts=[NSMutableArray new];_geminiCalls=[NSMutableArray new];_deepseekReasoning=[NSMutableString new];}return self;}
+- (void)fail:(NSString *)message{if(self.ended)return;self.ended=YES;self.event(@{@"type":@"error",@"message":message});}
+- (void)text:(NSString *)text{if(text.length)self.event(@{@"type":@"text",@"text":text});}
+- (BOOL)emitCall:(NSDictionary *)call{NSString *ident=Str(call[@"id"]),*name=Str(call[@"name"]);if(!ident.length||!name.length){[self fail:@"模型返回不完整的工具标识，未执行任何此请求操作"];return NO;}if([self.emittedIDs containsObject:ident])return YES;id args=Str(call[@"args"]).length?nil:call[@"input"];if(!args){NSString *raw=Str(call[@"args"]);args=[NSJSONSerialization JSONObjectWithData:[raw dataUsingEncoding:NSUTF8StringEncoding] options:0 error:nil];}if(![args isKindOfClass:NSDictionary.class]){[self fail:@"工具参数不是完整 JSON 对象，请重试对话；未执行此请求"];return NO;}[self.emittedIDs addObject:ident];self.event(@{@"type":@"tool_call",@"id":ident,@"name":name,@"arguments":args});return YES;}
+- (void)complete{if(self.ended)return;NSMutableDictionary *seen=[NSMutableDictionary new];for(NSDictionary *call in self.calls.allValues){id args=Str(call[@"args"]).length?[NSJSONSerialization JSONObjectWithData:[Str(call[@"args"]) dataUsingEncoding:NSUTF8StringEncoding] options:0 error:nil]:call[@"input"];if(!Str(call[@"id"]).length||!Str(call[@"name"]).length||![args isKindOfClass:NSDictionary.class]){[self fail:@"工具参数或标识不完整；本轮工具全部暂停执行"];return;}NSDictionary *signature=@{@"name":call[@"name"],@"arguments":args};if(seen[call[@"id"]]&&![seen[call[@"id"]] isEqual:signature]){[self fail:@"同一工具请求 ID 对应不同参数，本轮工具暂停执行"];return;}seen[call[@"id"]]=signature;}if(self.geminiParts.count)self.event(@{@"type":@"provider_items",@"items":@[@{@"type":@"gemini_content",@"parts":self.geminiParts,@"calls":self.geminiCalls}]});if(self.deepseekReasoning.length)self.event(@{@"type":@"provider_items",@"items":@[@{@"type":@"deepseek_reasoning",@"content":self.deepseekReasoning}]});if(self.reasoning.count)self.event(@{@"type":@"provider_items",@"items":[self.reasoning.allValues sortedArrayUsingComparator:^NSComparisonResult(NSDictionary *a,NSDictionary *b){return [a[@"id"] compare:b[@"id"]];}]});for(NSString *key in [[self.calls allKeys] sortedArrayUsingSelector:@selector(compare:)])if(![self emitCall:self.calls[key]])return;self.ended=YES;self.event(@{@"type":@"done"});}
+- (void)appendData:(NSData *)data{if(self.ended)return;self.bytes+=data.length;if(self.bytes>16*1024*1024){[self fail:@"响应超过 16 MB 限制，已停止接收"];return;}[self.buffer appendData:data];if(self.buffer.length>1024*1024){[self fail:@"单个流事件超过 1 MB 限制"];return;}while(self.buffer.length&&!self.ended){const unsigned char *b=self.buffer.bytes;NSUInteger n=self.buffer.length,i=0;while(i<n&&b[i]!='\n'&&b[i]!='\r')i++;if(i==n)break;if(b[i]=='\r'&&i+1==n)break;NSUInteger used=i+1;if(b[i]=='\r'&&i+1<n&&b[i+1]=='\n')used++;NSData *line=[self.buffer subdataWithRange:NSMakeRange(0,i)];[self.buffer replaceBytesInRange:NSMakeRange(0,used) withBytes:NULL length:0];NSString *s=[[NSString alloc]initWithData:line encoding:NSUTF8StringEncoding];if(!s){[self fail:@"服务返回了无效 UTF-8 数据"];return;}if(!s.length){[self dispatchFrame];}else if([s hasPrefix:@"data:"]){NSString *v=[s substringFromIndex:5];if([v hasPrefix:@" "])v=[v substringFromIndex:1];[self.dataLines addObject:v];}}}
+- (void)dispatchFrame{if(!self.dataLines.count)return;NSString *data=[self.dataLines componentsJoinedByString:@"\n"];[self.dataLines removeAllObjects];if([data isEqual:@"[DONE]"]){if([WireProtocol(self.protocol) isEqual:@"chat"]&&self.sawFinish)[self complete];else if(!self.ended)[self fail:@"模型响应提前结束，尚未收到完整结束标记"];return;}id obj=[NSJSONSerialization JSONObjectWithData:[data dataUsingEncoding:NSUTF8StringEncoding] options:0 error:nil];if(![obj isKindOfClass:NSDictionary.class]){[self fail:@"流式响应包含无效 JSON"];return;}[self acceptJSON:obj];}
+- (void)finish{if(self.ended)return;if(self.buffer.length){const unsigned char *b=self.buffer.bytes;if(b[self.buffer.length-1]=='\r')[self appendData:[@"\n" dataUsingEncoding:NSUTF8StringEncoding]];}[self dispatchFrame];if(self.ended)return;if(([WireProtocol(self.protocol) isEqual:@"chat"]||[self.protocol isEqual:@"gemini"])&&self.sawFinish&&!self.buffer.length)[self complete];else[self fail:@"连接已中断，响应尚未完整结束；已有修改不会自动重放"];}
+- (void)retainReasoning:(NSDictionary *)item{NSString *identifier=Str(item[@"id"]);if([item[@"type"] isEqual:@"reasoning"]&&identifier.length&&![self.summaryIDs containsObject:identifier]){NSMutableArray *parts=[NSMutableArray new];for(id part in ([item[@"summary"] isKindOfClass:NSArray.class]?item[@"summary"]:@[]))if([part isKindOfClass:NSDictionary.class]&&[part[@"type"] isEqual:@"summary_text"]&&Str(part[@"text"]).length)[parts addObject:part[@"text"]];if(parts.count){[self.summaryIDs addObject:identifier];self.event(@{@"type":@"analysis_summary",@"text":[parts componentsJoinedByString:@"\n"],@"id":identifier});}}if([item[@"type"] isEqual:@"reasoning"]&&Str(item[@"id"]).length&&Str(item[@"encrypted_content"]).length)self.reasoning[item[@"id"]]=@{@"type":@"reasoning",@"id":item[@"id"],@"summary":@[],@"encrypted_content":item[@"encrypted_content"]};}
+- (void)acceptJSON:(NSDictionary *)j{@try{if(++self.frames>100000||self.calls.count>64||self.reasoning.count>32){[self fail:@"响应事件或工具数量超过本轮限制"];return;}[self parseJSON:j];}@catch(NSException *exception){[self fail:@"服务返回的事件结构无效，已停止本轮请求"];}}
+- (void)parseGemini:(NSDictionary *)j{NSDictionary *feedback=j[@"promptFeedback"];if(Str(feedback[@"blockReason"]).length){[self fail:@"Gemini 已拦截此输入，未执行工具"];return;}NSArray *candidates=[j[@"candidates"] isKindOfClass:NSArray.class]?j[@"candidates"]:@[];for(NSDictionary *candidate in candidates){if([candidate[@"index"] integerValue]!=0)continue;NSDictionary *content=candidate[@"content"];for(NSDictionary *part in content[@"parts"]){if(![part isKindOfClass:NSDictionary.class]){[self fail:@"Gemini 返回了无效内容片段"];return;}if(self.geminiParts.count>1024){[self fail:@"Gemini 内容片段超过限制"];return;}NSMutableDictionary *saved=[NSMutableDictionary new];for(NSString *key in @[@"text",@"thought",@"thoughtSignature",@"functionCall"])if(part[key])saved[key]=part[key];if(saved.count)[self.geminiParts addObject:saved];if([part[@"thought"] boolValue]){if(Str(part[@"text"]).length)self.event(@{@"type":@"analysis_summary",@"text":part[@"text"]});}else if([part[@"text"] isKindOfClass:NSString.class])[self text:part[@"text"]];if(part[@"functionCall"]){NSDictionary *f=part[@"functionCall"];if(![f isKindOfClass:NSDictionary.class]||!Str(f[@"name"]).length||![f[@"args"] isKindOfClass:NSDictionary.class]){[self fail:@"Gemini 工具调用参数不完整"];return;}NSString *nativeID=Str(f[@"id"]),*identifier=nativeID.length?nativeID:[@"gemini-" stringByAppendingString:NSUUID.UUID.UUIDString];NSString *key=[NSString stringWithFormat:@"%04lu",(unsigned long)self.calls.count];self.calls[key]=@{@"id":identifier,@"name":f[@"name"],@"input":f[@"args"]};[self.geminiCalls addObject:@{@"id":identifier,@"name":f[@"name"],@"nativeID":nativeID}];}}NSString *reason=Str(candidate[@"finishReason"]);if(reason.length){if(![reason isEqual:@"STOP"]){[self fail:[NSString stringWithFormat:@"Gemini 响应未完整完成（%@），未执行本轮工具",reason]];return;}self.sawFinish=YES;}}if(self.sawFinish)[self complete];}
+- (void)parseJSON:(NSDictionary *)j{if(self.ended)return;NSString *type=Str(j[@"type"]);id seq=j[@"sequence_number"];if([seq isKindOfClass:NSNumber.class]){if([self.sequences containsObject:seq])return;[self.sequences addObject:seq];}// Preserve provider usage even when this terminal frame reports an error.
+ NSString *wire=WireProtocol(self.protocol);id usage=nil;if([wire isEqual:@"gemini"])usage=j[@"usageMetadata"];else if([wire isEqual:@"responses"])usage=[j[@"response"] isKindOfClass:NSDictionary.class]?j[@"response"][@"usage"]:j[@"usage"];else if([wire isEqual:@"anthropic"]&&[type isEqual:@"message_start"])usage=[j[@"message"] isKindOfClass:NSDictionary.class]?j[@"message"][@"usage"]:nil;else usage=j[@"usage"];if([usage isKindOfClass:NSDictionary.class])self.event(@{@"type":@"usage",@"usage":usage});
+ if(j[@"error"]||[type isEqual:@"error"]){[self fail:@"模型服务返回错误，请检查连接、模型权限和用量限制"];return;}
+ if([WireProtocol(self.protocol) isEqual:@"chat"]){for(NSDictionary *choice in ([j[@"choices"] isKindOfClass:NSArray.class]?j[@"choices"]:@[])){if([choice[@"index"] integerValue]!=0)continue;BOOL full=[choice[@"message"] isKindOfClass:NSDictionary.class];NSDictionary *d=full?choice[@"message"]:choice[@"delta"];if([d[@"reasoning_content"] isKindOfClass:NSString.class]){if(self.deepseekReasoning.length+[d[@"reasoning_content"] length]>1024*1024){[self fail:@"推理状态超过本轮大小限制"];return;}[self.deepseekReasoning appendString:d[@"reasoning_content"]];if([d[@"reasoning_content"] length])self.event(@{@"type":@"analysis_summary",@"text":d[@"reasoning_content"]});}if([d[@"content"] isKindOfClass:NSString.class])[self text:d[@"content"]];for(NSDictionary *c in ([d[@"tool_calls"] isKindOfClass:NSArray.class]?d[@"tool_calls"]:@[])){NSString *key=[NSString stringWithFormat:@"%@",c[@"index"]?:c[@"id"]?:@0];NSMutableDictionary *v=self.calls[key];if(!v){v=[@{@"args":[NSMutableString new]} mutableCopy];self.calls[key]=v;}if(Str(c[@"id"]).length)v[@"id"]=c[@"id"];NSDictionary *f=c[@"function"];if(Str(f[@"name"]).length)v[@"name"]=f[@"name"];if(Str(f[@"arguments"]).length)[v[@"args"] appendString:f[@"arguments"]];}NSString *reason=Str(choice[@"finish_reason"]);if(reason.length){if([reason isEqual:@"length"]||[reason isEqual:@"content_filter"]){[self fail:@"模型输出因长度或内容限制中断，未应用不完整工具请求"];return;}self.sawFinish=YES;}if(full){self.sawFinish=YES;[self complete];}}}
+ else if([self.protocol isEqual:@"gemini"]){[self parseGemini:j];}
+ else if([self.protocol isEqual:@"responses"]){if([type isEqual:@"response.reasoning_summary_text.delta"]){NSString *identifier=Str(j[@"item_id"]);if(identifier.length)[self.summaryIDs addObject:identifier];if(Str(j[@"delta"]).length)self.event(@{@"type":@"analysis_summary",@"text":j[@"delta"]});}if([type isEqual:@"response.output_text.delta"])[self text:Str(j[@"delta"])];if([type isEqual:@"response.output_item.added"]||[type isEqual:@"response.output_item.done"]){NSDictionary *item=j[@"item"];if([type hasSuffix:@"done"])[self retainReasoning:item];if([item[@"type"] isEqual:@"function_call"]){NSString *key=Str(item[@"id"]);if(!key.length)key=[j[@"output_index"] description];NSMutableDictionary *v=self.calls[key];if(!v){v=[@{@"args":[NSMutableString new]} mutableCopy];self.calls[key]=v;}v[@"id"]=Str(item[@"call_id"]);v[@"name"]=Str(item[@"name"]);if([type hasSuffix:@"done"]||Str(item[@"arguments"]).length)v[@"args"]=[Str(item[@"arguments"]) mutableCopy];}}
+ if([type isEqual:@"response.function_call_arguments.delta"]){NSString *key=Str(j[@"item_id"]);NSMutableDictionary *v=self.calls[key];if(!v){v=[@{@"args":[NSMutableString new]} mutableCopy];self.calls[key]=v;}[v[@"args"] appendString:Str(j[@"delta"])];}
+ if([type isEqual:@"response.function_call_arguments.done"]){NSMutableDictionary *v=self.calls[Str(j[@"item_id"])];if(v)v[@"args"]=[Str(j[@"arguments"]) mutableCopy];}
+ if([type isEqual:@"response.failed"]||[type isEqual:@"response.incomplete"]){[self fail:ResponsesFailure([j[@"response"] isKindOfClass:NSDictionary.class]?j[@"response"]:@{@"status":[type isEqual:@"response.failed"]?@"failed":@"incomplete"})];return;}
+ if([type isEqual:@"response.completed"]||[j[@"object"] isEqual:@"response"]){NSDictionary *response=j[@"response"]?:j;if([response[@"status"] isEqual:@"failed"]||[response[@"status"] isEqual:@"incomplete"]){[self fail:ResponsesFailure(response)];return;}for(NSDictionary *item in response[@"output"]){[self retainReasoning:item];if([item[@"type"] isEqual:@"function_call"]){NSString *key=Str(item[@"id"]);if(!key.length)key=Str(item[@"call_id"]);self.calls[key]=@{@"id":Str(item[@"call_id"]),@"name":Str(item[@"name"]),@"args":Str(item[@"arguments"])};}else if([j[@"object"] isEqual:@"response"])for(NSDictionary *content in item[@"content"])if([content[@"type"] isEqual:@"output_text"])[self text:Str(content[@"text"])];}[self complete];}}
+ else {if([type isEqual:@"content_block_start"]){NSDictionary *block=j[@"content_block"];if([block[@"type"] isEqual:@"tool_use"])self.calls[[j[@"index"] description]]=[@{@"id":Str(block[@"id"]),@"name":Str(block[@"name"]),@"input":block[@"input"]?:@{},@"args":[NSMutableString new]} mutableCopy];if([block[@"type"] isEqual:@"thinking"]&&Str(block[@"thinking"]).length)self.event(@{@"type":@"analysis_summary",@"text":block[@"thinking"]});if([block[@"type"] isEqual:@"text"])[self text:Str(block[@"text"])];}if([type isEqual:@"content_block_delta"]){NSDictionary *d=j[@"delta"];if([d[@"type"] isEqual:@"thinking_delta"]&&Str(d[@"thinking"]).length)self.event(@{@"type":@"analysis_summary",@"text":d[@"thinking"]});if([d[@"type"] isEqual:@"text_delta"])[self text:Str(d[@"text"])];if([d[@"type"] isEqual:@"input_json_delta"])[self.calls[[j[@"index"] description]][@"args"] appendString:Str(d[@"partial_json"])];}if([type isEqual:@"message_delta"]){NSString *reason=Str(j[@"delta"][@"stop_reason"]);if([reason isEqual:@"max_tokens"]){[self fail:@"模型输出达到长度上限，工具参数可能不完整"];return;}}if([type isEqual:@"message_stop"])[self complete];if([type isEqual:@"message"]){if([j[@"stop_reason"] isEqual:@"max_tokens"]){[self fail:@"模型输出达到长度上限"];return;}for(NSDictionary *b in j[@"content"]){if([b[@"type"] isEqual:@"thinking"]&&Str(b[@"thinking"]).length)self.event(@{@"type":@"analysis_summary",@"text":b[@"thinking"]});if([b[@"type"] isEqual:@"text"])[self text:Str(b[@"text"])];if([b[@"type"] isEqual:@"tool_use"])self.calls[Str(b[@"id"])]=@{@"id":Str(b[@"id"]),@"name":Str(b[@"name"]),@"input":b[@"input"]?:@{}};}[self complete];}}
+}
+@end

@@ -1,0 +1,43 @@
+name: Build PocketBuild
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    runs-on: macos-15
+    env:
+      DEVELOPER_DIR: /Applications/Xcode_16.4.app/Contents/Developer
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Install MCP bridge dependencies
+        run: python3 -m pip install -r desktop/requirements.txt
+      - name: Check build-only source
+        run: |
+          python3 scripts/build_buildonly.py --check
+          python3 scripts/test_pocketbuild.py
+          node scripts/test_pocketbuild_web.cjs
+          python3 scripts/test_pocketbuild_mcp.py
+          python3 scripts/test_pocketbuild_app.py
+      - name: Fetch verified compiler frameworks
+        run: python3 scripts/fetch_toolchain.py
+      - name: Build device IPA
+        run: python3 scripts/build_buildonly.py --packages
+      - uses: actions/upload-artifact@v4
+        with:
+          name: PocketBuild
+          path: build/pocketbuild-device/PocketBuild-0.1.0-unsigned.ipa
+          if-no-files-found: error
+      - uses: actions/upload-artifact@v4
+        with:
+          name: PocketBuild-resources
+          path: build/pocketbuild-device/packages/
+          if-no-files-found: error

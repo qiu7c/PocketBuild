@@ -1,0 +1,15 @@
+{
+  "mcpServers": {
+    "PocketBuild": {
+      "command": "C:/PocketBuild/.venv/Scripts/python.exe",
+      "args": [
+        "C:/PocketBuild/desktop/mcp_server.py",
+        "--phone", "http://172.20.10.1:8787",
+        "--workspace", "C:/Projects"
+      ],
+      "env": {
+        "POCKETBUILD_TOKEN": "替换为手机当前连接码"
+      }
+    }
+  }
+}

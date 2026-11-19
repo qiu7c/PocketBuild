@@ -1,0 +1,47 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>PocketBuild</title>
+<link rel="stylesheet" href="/style.css">
+<script src="/app.js" defer></script>
+</head>
+<body>
+<header><strong>PocketBuild</strong><span id="connection">未连接</span><button id="disconnect" hidden>断开</button></header>
+<section id="login">
+<form id="connect-form"><label for="code">手机连接码</label><input id="code" type="password" autocomplete="off" required><button>连接手机</button></form>
+</section>
+<main id="workspace" hidden>
+<aside>
+<label for="project">项目</label><select id="project"></select>
+<label for="product-type">新项目类型</label><select id="product-type"><option value="tweak">插件 / dylib</option><option value="app">UIKit App / IPA</option></select>
+<div class="actions"><button id="create">新建项目</button><button id="upload">上传文件</button><button id="folder">上传文件夹</button></div>
+<input id="files-input" type="file" multiple hidden><input id="folder-input" type="file" webkitdirectory multiple hidden>
+<details><summary>构建设置</summary>
+<form id="options-form"><fieldset id="options-fields" disabled>
+<label>产物类型<select id="option-product"><option value="tweak">插件</option><option value="app">App / IPA</option></select></label>
+<div id="tweak-options">
+<label><input id="option-dylib" type="checkbox">独立 dylib</label>
+<label><input id="option-package" type="checkbox">生成 DEB</label>
+<label><input id="option-rootless" type="checkbox">无根</label>
+<label><input id="option-rootful" type="checkbox">有根</label>
+<label><input id="option-roothide" type="checkbox">隐根</label>
+</div>
+<label>CPU<select id="option-cpu"><option value="arm64">arm64</option><option value="arm64e">arm64e（待验证）</option></select></label>
+<label>SDK<select id="option-sdk"><option value="16.4">iOS 16.4</option><option value="26.0">iOS 26.0</option></select></label>
+<label>最低 iOS<input id="option-minimum" value="15.0" required></label>
+<button type="submit">保存设置</button>
+</fieldset></form>
+</details>
+<ul id="files"></ul>
+</aside>
+<section class="editor">
+<div class="bar"><span id="filename">选择文件</span><button id="new-file">新建文件</button><button id="save" disabled>保存</button><button id="build">编译</button><button id="cancel" disabled>取消构建</button></div>
+<textarea id="content" spellcheck="false" aria-label="源码编辑器" disabled></textarea>
+<section class="output"><div class="bar"><span id="job-state">无构建任务</span></div><pre id="log"></pre><div id="artifacts"></div></section>
+</section>
+</main>
+<p id="message" role="status" aria-live="polite"></p>
+</body>
+</html>

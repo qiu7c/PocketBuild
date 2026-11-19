@@ -1,0 +1,14 @@
+{
+  "productType": "app",
+  "productName": "HelloPocket",
+  "bundleIdentifier": "com.example.hellopocket",
+  "sources": ["main.m"],
+  "resources": [],
+  "frameworks": ["Foundation", "UIKit"],
+  "sdkVersion": "16.4",
+  "deploymentTarget": "15.0",
+  "cpuArchitecture": "arm64",
+  "objcArc": true,
+  "package": false,
+  "exportDylib": true
+}

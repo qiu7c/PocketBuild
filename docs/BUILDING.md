@@ -1,0 +1,66 @@
+# 构建 Dylix
+
+## 目录与前提
+
+- `App/`：UIKit 编辑器、项目/存储/Git/AI/编译桥。
+- `ShareExtension/`：系统分享入口；`LiveActivityExtension/`：活动扩展资源。
+- `Vendor/`：libgit2、REipa 子集和 Rust 桥、MBProgressHUD、兼容头文件。
+- `Resources/`：Logos/Perl、Clang 资源头、编辑器素材、示例、许可。
+- `scripts/`、`tests/`：构建与回归。`build/` 是忽略的本地产物。
+
+要求 macOS、Xcode/Command Line Tools、Python3、CMake、Rust stable。运行 `xcode-select -p` 和 `xcrun --show-sdk-path` 确认 Apple 工具链。源码没有 `.xcodeproj`：使用 Python 构建入口。
+
+## 1. 工具链
+
+`python3 scripts/fetch_toolchain.py` 下载本仓库 Release 中校验过 SHA-256 的预编译框架，解到 `Vendor/`；下载包不含 Apple SDK。也可设置 `DYLIX_TOOLCHAIN_ROOT` 到另一个包含 `Vendor/*.xcframework` 的目录。
+
+LLVM/Clang/LLD 14 来源为 holzschu/llvm-project；ios_system 3.0.5、Perl 5.34.0 来源见第三方清单。下载脚本只安装数据，不执行外部安装脚本。版本与每个框架文件摘要在 `dependencies.lock.json`。二进制依赖沿用各自许可。
+
+## 2. Apple SDK
+
+仓库包含两套 SDK 输入：`Resources/SDK`（16.4）和 `LocalSDKs/iPhoneOS26.0.sdk`（26.0），拉取源码后直接使用。Apple SDK 保留原有条款，不适用 Dylix 的 GPL 许可。
+
+如需使用其他本地副本，可以通过 `DYLIX_SDK_16_4` 与 `DYLIX_SDK_26_0` 环境变量覆盖路径。构建时校验 SDKSettings.plist 的 Version 并压缩内嵌；插件默认仍为 SDK16.4、最低 iOS15。
+
+## 3. Rust 与 CMake
+
+```sh
+rustup target add aarch64-apple-ios x86_64-apple-ios
+cmake --version
+cargo +stable --version
+```
+
+CMake 可用 `TMC_CMAKE` 指定可执行文件。Rust 桥使用 Cargo.lock 固定依赖；首次构建需下载 crates。libgit2 使用 SecureTransport，不启用 SSH CLI。
+
+## 4. 构建
+
+```sh
+# 真机 App，以 iOS26 SDK 编译 Dylix 本身
+python3 scripts/build.py --sdk-root LocalSDKs/iPhoneOS26.0.sdk
+# 模拟器，当前实现为 x86_64
+python3 scripts/build.py --simulator
+```
+
+模拟器构建使用 Xcode 当前 Simulator SDK；不把 device SDK 传给 `--simulator`。构建输出 `build/device/`、`build/simulator/` 和根下 IPA。签名参数 `--identity`、`--profile`、`--share-profile` 见 `python3 scripts/build.py --help`；实际证书和 provisioning profile 必须匹配主应用及分享扩展标识、App Group。adhoc IPA 仍需签名/适用安装方式。
+
+## 5. 验证
+
+```sh
+python3 scripts/test_developer_prompt.py
+python3 scripts/test_git.py
+python3 scripts/test_package_schemes.py
+```
+
+完整测试入口见 scripts/、tests/。iOS 原生回归通过模拟器启动参数运行，例如 `--ai-render122-test`、`--ai-workspace133-test`、`--ai-v2-test`；测试使用本地样本和保留的 `.invalid` 域名拦截，不需要真实模型密钥。模拟器测试必须在一次性测试安装中执行，部分夹具会重置它们自己的样例会话。
+
+部分历史压力脚本引用未随开源版分发的个人 FLEX 测试工程。它不是 Dylix 的运行依赖，请自行提供相应测试夹具或只运行内置基础样例；仓库不包含其代码和二进制。
+
+## 发布材料
+
+源码包含两套 SDK 构建输入；公开工具链资产另行下载。发布内容不含个人证书、用户数据或旧构建。GPL 原创代码、Logos 等对应源码与构建脚本均随仓库提供；第三方许可见仓库及 App 内说明。Apple SDK 与系统库仍受其各自条款约束。
+
+## 1.0.8 内置 FLEX 插件
+
+Resources/FLEXPlugin/manifest.json 声明随 App 打包的 FLEX 1.0.0 dylib / deb 与 SHA-256，构建脚本校验后复制。对应插件源码见同版 Release 的 FLEX-1.0.0-source.zip；在 macOS 安装 Theos 后执行 `LC_ALL=C LC_CTYPE=C LANG=C THEOS=/path/to/theos make package FINALPACKAGE=1`。仅插件版本重编号，连接配置格式保持原样。
+
+公开 Persona 目录只包含有 MIT 许可的四项数据。私有无许可正文不发布；用户已有本地配置不清空。

@@ -1,0 +1,21 @@
+:root{color-scheme:light dark;font-family:"Segoe UI",system-ui,sans-serif;font-size:14px}
+*{box-sizing:border-box}
+body{margin:0;background:Canvas;color:CanvasText}
+header{height:56px;padding:12px 20px;border-bottom:1px solid GrayText;display:flex;align-items:center;gap:20px}
+header strong{font-size:18px}#connection{margin-left:auto}
+button,input,select{font:inherit;padding:7px 10px;border:1px solid GrayText;border-radius:4px;color:CanvasText;background:Canvas}
+button{cursor:pointer}button:disabled{cursor:default;opacity:.5}
+input,select{min-width:0}button:focus-visible,input:focus-visible,select:focus-visible,textarea:focus-visible{outline:2px solid Highlight;outline-offset:2px}
+#login{max-width:500px;margin:64px auto;padding:20px}form{display:grid;gap:12px}
+main{display:grid;grid-template-columns:260px 1fr;height:calc(100vh - 94px)}
+[hidden]{display:none!important}
+aside{border-right:1px solid GrayText;padding:16px;overflow:auto}aside label{display:block;margin-bottom:8px}select{width:100%}
+.actions{display:flex;flex-wrap:wrap;gap:8px;margin:12px 0}
+details{margin:12px 0}summary{cursor:pointer}fieldset{border:0;padding:10px 0;margin:0;min-width:0}fieldset input:not([type=checkbox]){width:100%}fieldset label{margin-bottom:10px}fieldset select{margin-top:4px}
+ul{list-style:none;padding:0}li button{display:block;text-align:left;width:100%;border:0;word-break:break-all}li button[aria-current=true]{background:Highlight;color:HighlightText}
+.editor{display:grid;grid-template-rows:auto 1fr minmax(180px,32%);min-width:0;min-height:0}
+.bar{display:flex;align-items:center;flex-wrap:wrap;gap:8px;padding:10px;border-bottom:1px solid GrayText}
+#filename{margin-right:auto;overflow-wrap:anywhere}textarea{resize:none;width:100%;border:0;padding:16px;font:14px/1.6 Consolas,"Courier New",monospace;background:Canvas;color:CanvasText;tab-size:4}
+.output{border-top:1px solid GrayText;overflow:auto}pre{white-space:pre-wrap;overflow-wrap:anywhere;margin:0;padding:12px;font:12px/1.5 Consolas,monospace}
+#artifacts{display:flex;gap:10px;flex-wrap:wrap;padding:10px}#message{margin:0;padding:8px 16px;min-height:38px;border-top:1px solid GrayText}
+@media(max-width:760px){main{grid-template-columns:180px 1fr}aside{padding:8px}.bar{padding:6px}button{padding:6px}}
