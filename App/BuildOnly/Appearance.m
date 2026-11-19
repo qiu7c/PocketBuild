@@ -43,7 +43,7 @@ UIButton *PBButton(NSString *title, NSString *symbol, BOOL primary) {
     config.titleTextAttributesTransformer=^NSDictionary<NSAttributedStringKey,id> *(NSDictionary<NSAttributedStringKey,id> *attributes){
         NSMutableDictionary *result=[attributes mutableCopy];result[NSFontAttributeName]=PBFont(15,UIFontWeightSemibold);return result;
     };
-    config.baseBackgroundColor=primary?UIColor.labelColor:UIColor.tertiarySystemFillColor;
+    config.baseBackgroundColor=UIColor.labelColor;
     config.baseForegroundColor=primary?UIColor.systemBackgroundColor:UIColor.labelColor;
     button.configuration=config;button.titleLabel.font=PBFont(15,UIFontWeightSemibold);return button;
 }

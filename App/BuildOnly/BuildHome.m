@@ -132,10 +132,16 @@
 }
 @end
 UIViewController *DXBuildHome(void) { UIViewController *c=[DXBuildHomeController new];c.navigationItem.backButtonDisplayMode=UINavigationItemBackButtonDisplayModeMinimal;return c; }
-@interface DXBuildAppDelegate : UIResponder <UIApplicationDelegate>
+@interface DXBuildAppDelegate : UIResponder <UIApplicationDelegate,UINavigationControllerDelegate>
 @property (strong,nonatomic) UIWindow *window;
 @end
 @implementation DXBuildAppDelegate
+#if TARGET_OS_SIMULATOR
+- (void)navigationController:(UINavigationController *)navigation didShowViewController:(UIViewController *)controller animated:(BOOL)animated {
+    NSDictionary *ready=@{@"controller":NSStringFromClass(controller.class),@"width":@(controller.view.bounds.size.width),@"height":@(controller.view.bounds.size.height)};
+    [[NSJSONSerialization dataWithJSONObject:ready options:0 error:nil] writeToFile:[NSTemporaryDirectory() stringByAppendingPathComponent:@"pocketbuild-ui-ready.json"] atomically:YES];
+}
+#endif
 - (BOOL)application:(UIApplication *)application didFinishLaunchingWithOptions:(NSDictionary *)options {
     self.window=[[UIWindow alloc] initWithFrame:UIScreen.mainScreen.bounds];
     self.window.tintColor=PBAccent();
@@ -180,6 +186,7 @@ UIViewController *DXBuildHome(void) { UIViewController *c=[DXBuildHomeController
     UINavigationController *navigation=[[UINavigationController alloc] initWithRootViewController:root];navigation.navigationBar.prefersLargeTitles=YES;navigation.navigationBar.tintColor=UIColor.labelColor;
 #if TARGET_OS_SIMULATOR
     if(screen!=NSNotFound&&screen+1<arguments.count&&[@[@"settings",@"tools",@"guide"] containsObject:arguments[screen+1]])[navigation setViewControllers:@[DXBuildHome(),root] animated:NO];
+    navigation.delegate=self;
 #endif
     navigation.navigationBar.standardAppearance=appearance;navigation.navigationBar.scrollEdgeAppearance=appearance;navigation.navigationBar.compactAppearance=appearance;
     self.window.rootViewController=navigation;[self.window makeKeyAndVisible];return YES;

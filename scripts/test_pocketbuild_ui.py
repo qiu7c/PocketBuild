@@ -36,10 +36,23 @@ def boot(device):
 
 
 def launch(uid, screen, *extra):
+    container = Path(sim("get_app_container", uid, BUNDLE, "data").stdout.strip())
+    ready = container / "tmp/pocketbuild-ui-ready.json"
     sim("terminate", uid, BUNDLE, check=False)
+    ready.unlink(missing_ok=True)
     result = sim("launch", uid, BUNDLE, "--ui-screen", screen, *extra,
                  "-AppleLanguages", "(zh-Hans)", "-AppleLocale", "zh_CN")
     print(result.stdout.strip(), screen, flush=True)
+    deadline = time.monotonic() + 60
+    while not ready.exists():
+        if time.monotonic() >= deadline:
+            raise AssertionError("Native screen did not appear: " + screen)
+        time.sleep(.1)
+    appeared = json.loads(ready.read_text())
+    expected = {"intro":"PBWelcomeController", "guide":"PBWelcomeController", "resources":"PBWelcomeController",
+                "pairing":"PBWelcomeController", "home":"DXBuildHomeController", "running":"DXBuildHomeController",
+                "settings":"PBConnectionController", "tools":"PBToolsController"}[screen]
+    assert appeared["controller"] == expected and appeared["width"] > 0, appeared
 
 
 def request(code, expected=200):
@@ -63,7 +76,7 @@ def request(code, expected=200):
 
 
 def screenshot(uid, name):
-    time.sleep(3)
+    time.sleep(1.2)
     sim("io", uid, "screenshot", str(OUT / (name + ".png")))
 
 
