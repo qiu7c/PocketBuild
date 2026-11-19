@@ -6,6 +6,8 @@ PocketBuild 用 iPhone / iPad 为 Windows 提供源码编辑、插件和 App 编
 
 发布一个 PocketBuild IPA。Clang、LLVM、LLD、Perl 和进程内运行支持随 App 打包并一起签名。SDK、Clang 头文件、Logos 和构建辅助资源按需下载。普通证书签名、TrollStore 和越狱安装使用同一份待签名 IPA；各安装环境的实际加载结果需要真机验收。
 
+首个验证构建见 [GitHub Actions #1](https://github.com/qiu7c/PocketBuild/actions/runs/44488562631)。在 Artifacts 下载 PocketBuild（内含待签名 IPA）和 PocketBuild-resources（内含资源清单、构建资源及 SDK ZIP）。
+
 PocketBuild 最低 iOS 15.0，内嵌 arm64 编译器。当前构建入口支持 Objective-C、Objective-C++、C、C++ 和 Logos 插件，输出 dylib、deb；支持使用代码创建界面的 UIKit App，输出 .app 目录及待签名 IPA。工程导入复用 MobileCompiler.json 和受支持的 Theos Makefile 解析。Swift / SwiftUI、Storyboard、XIB、资源目录编译及完整 Xcode 工程解析尚未接入。
 
 ## 连接 Windows
@@ -68,6 +70,8 @@ IPA 使用 ad-hoc 构建签名。普通证书安装前需要对 App 和所有内
 
 ## 开发状态
 
-手机端、浏览器、MCP 桥和 App 打包路径已实现，正在验证。Windows 上已通过设备 SDK 语法检查、浏览器协议模拟、真实 stdio MCP 与模拟手机 HTTP 服务联调，以及模拟 Apple 工具的安装包流程检查。macOS 的 App 链接/打包回归已加入云编译流程，尚未运行。实际 Xcode 链接、真实证书签名、iPhone 热点及手机内嵌编译器构建仍待验收。Windows 独立 exe 尚未实现。
+2026-11-19，源码提交 da63fc7 通过首次 macOS 云编译，生成 PocketBuild IPA 和按需下载资源包。Windows 已通过设备 SDK 语法检查、浏览器协议模拟、真实 stdio MCP 与模拟手机 HTTP 服务联调，以及模拟 Apple 工具的安装包流程检查；macOS 已通过生产 App 打包代码配合 Xcode 工具的可执行链接、签名校验、资源布局和取消清理回归。
+
+手机内嵌 Clang/LLD 的实际构建、真实证书签名后的安装运行、iPhone 热点连接及各越狱环境加载仍待真机验收，arm64e 状态为待验证。Windows 独立 exe 尚未实现。
 
 上游代码和许可证保留在仓库中。PocketBuild 构建目标采用独立源文件清单，不包含上游聊天、模型服务、Agent 或 iSH 终端模块。上游项目说明见 docs/UPSTREAM_README.md，版权和第三方清单见 COPYRIGHT、LICENSE、THIRD_PARTY_NOTICES.md。

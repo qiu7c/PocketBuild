@@ -52,4 +52,4 @@ PocketBuild 本身最低 iOS 15.0。生成的 App 由 deploymentTarget 指定最
 
 ## 验证
 
-Windows 已检查原生代码语法及 MCP、浏览器传输流程。macOS 可运行 python3 scripts/test_pocketbuild_app.py，使用生产打包代码和 Xcode 工具检查可执行链接参数、签名验证、IPA 元数据、资源布局、权限与取消清理。该测试已加入云编译，但本机没有 Xcode，尚未实际执行；它也不代替 iPhone 内嵌 Clang/LLD 编译与安装验收。
+Windows 已检查原生代码语法及 MCP、浏览器传输流程。2026-11-19，[首次 macOS 云编译](https://github.com/qiu7c/PocketBuild/actions/runs/44488562631)通过了 python3 scripts/test_pocketbuild_app.py，使用生产打包代码和 Xcode 工具验证可执行链接参数、签名验证、IPA 元数据、资源布局、权限与取消清理，并成功构建 PocketBuild 本身的 IPA。该结果不代替 iPhone 内嵌 Clang/LLD 编译与安装验收，arm64e 产物尚未实测。
