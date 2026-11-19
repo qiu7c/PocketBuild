@@ -42,6 +42,7 @@ jobs:
           path: build/pocketbuild-device/packages/
           if-no-files-found: error
   interface:
+    if: github.event_name == 'workflow_dispatch'
     runs-on: macos-15-intel
     timeout-minutes: 15
     env:
