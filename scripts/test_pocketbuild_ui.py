@@ -1,6 +1,7 @@
 """Run native simulator screenshots and real Keychain/HTTP pairing checks on macOS."""
 import json
 from pathlib import Path
+import shutil
 import subprocess
 import time
 import urllib.error
@@ -11,6 +12,15 @@ OUT = ROOT / "build/pocketbuild-ui"
 BUNDLE = "com.qiu7c.pocketbuild"
 CODE = "PocketBuild-Test-1234"
 OUT.mkdir(parents=True, exist_ok=True)
+
+# UI/Keychain/HTTP checks never load the compiler. Install the real App executable
+# and its compiler facade without copying hundreds of MB of unused LLVM binaries.
+# The separate device build verifies the complete IPA and embedded toolchain.
+source_app = ROOT / "build/pocketbuild-simulator/PocketBuild.app"
+ui_app = ROOT / "build/pocketbuild-ui-install/PocketBuild.app"
+shutil.copytree(source_app, ui_app, ignore=shutil.ignore_patterns("Frameworks"), dirs_exist_ok=True)
+shutil.copytree(source_app / "Frameworks/PBCompiler.framework", ui_app / "Frameworks/PBCompiler.framework", dirs_exist_ok=True)
+subprocess.run(["codesign", "--force", "--sign", "-", str(ui_app)], check=True)
 
 
 def sim(*args, check=True):
@@ -31,7 +41,7 @@ def boot(device):
     sim("boot", uid, check=False)
     sim("bootstatus", uid, "-b")
     sim("status_bar", uid, "override", "--time", "9:41", "--batteryState", "charged", "--batteryLevel", "100")
-    sim("install", uid, str(ROOT / "build/pocketbuild-simulator/PocketBuild.app"))
+    sim("install", uid, str(ui_app))
     return uid
 
 
