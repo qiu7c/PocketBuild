@@ -6,7 +6,7 @@ PocketBuild 用 iPhone / iPad 为 Windows 提供源码编辑、插件和 App 编
 
 发布一个 PocketBuild IPA。Clang、LLVM、LLD、Perl 和进程内运行支持随 App 打包并一起签名。SDK、Clang 头文件、Logos 和构建辅助资源按需下载。普通证书签名、TrollStore 和越狱安装使用同一份待签名 IPA；各安装环境的实际加载结果需要真机验收。
 
-首个验证构建见 [GitHub Actions #1](https://github.com/qiu7c/PocketBuild/actions/runs/44488562631)。在 Artifacts 下载 PocketBuild（内含待签名 IPA）和 PocketBuild-resources（内含资源清单、构建资源及 SDK ZIP）。
+下载入口见 [GitHub Actions](https://github.com/qiu7c/PocketBuild/actions/workflows/build-only.yml)，选择最近成功的构建。在 Artifacts 下载 PocketBuild（内含待签名 IPA）和 PocketBuild-resources（内含资源清单、构建资源及 SDK ZIP）。
 
 PocketBuild 最低 iOS 15.0，内嵌 arm64 编译器。当前构建入口支持 Objective-C、Objective-C++、C、C++ 和 Logos 插件，输出 dylib、deb；支持使用代码创建界面的 UIKit App，输出 .app 目录及待签名 IPA。工程导入复用 MobileCompiler.json 和受支持的 Theos Makefile 解析。Swift / SwiftUI、Storyboard、XIB、资源目录编译及完整 Xcode 工程解析尚未接入。
 
