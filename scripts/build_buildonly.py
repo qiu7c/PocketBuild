@@ -12,7 +12,7 @@ import zipfile
 
 ROOT = Path(__file__).resolve().parents[1]
 VERSION = "0.1.0"
-BUILD_NUMBER = "2"
+BUILD_NUMBER = "3"
 
 
 def compiler_source() -> str:
@@ -43,6 +43,11 @@ def compiler_source() -> str:
     source = source.replace(
         '[[NSBundle mainBundle] pathForResource:@"commands" ofType:@"plist"]',
         '[PBInstalledPackage(@"support") stringByAppendingPathComponent:@"commands.plist"]',
+    )
+    source = source.replace(
+        'void *handle = dlopen(path.fileSystemRepresentation, RTLD_NOW | RTLD_GLOBAL);',
+        'TMCLog(log, "loading %s: %s\\n", name.UTF8String, path.UTF8String);\n'
+        '    void *handle = dlopen(path.fileSystemRepresentation, RTLD_NOW | RTLD_GLOBAL);',
     )
     # Keep the upstream compile loop; change the product-specific link and package steps.
     hooks = {
@@ -216,7 +221,12 @@ def main() -> None:
         "BuildOnly/BuildHome.m", "BuildOnly/ToolsHome.m", "BuildOnly/BuildService.m", "BuildOnly/Toolchains.m",
         "BuildOnly/ScreenAwake.m", "Remote/DXRemoteHTTP.m", "ArchiveImport.m", "TheosMakefile.m",
     )]
-    subprocess.run(common + [*map(str,sources), "-o", str(app / "PocketBuild")],check=True)
+    # Match upstream's startup LLVM load and executable-level framework search path.
+    subprocess.run(common + [
+        "-F" + str(frameworks), "-framework", "ios_system",
+        "-Wl,-needed_framework,libLLVM", "-Wl,-rpath,@executable_path/Frameworks",
+        *map(str,sources), "-o", str(app / "PocketBuild"),
+    ],check=True)
     icons_info = build / "icons-info.plist"
     subprocess.run([
         "xcrun","actool","--compile",str(app),"--platform",platform,"--minimum-deployment-target","15.0",

@@ -79,6 +79,8 @@ class PocketBuildPackagingTests(unittest.TestCase):
                 self.assertEqual(len(item["sha256"]), 64)
                 self.assertTrue((output / "packages" / item["url"]).exists())
             app_command = next(cmd for cmd in commands if "clang" in cmd and "-dynamiclib" not in cmd)
+            self.assertIn("-Wl,-needed_framework,libLLVM", app_command)
+            self.assertIn("-Wl,-rpath,@executable_path/Frameworks", app_command)
             self.assertFalse(any("/App/AI/" in part.replace("\\", "/") for part in app_command))
             signatures = [cmd[-1] for cmd in commands if cmd[0] == "codesign"]
             self.assertEqual(len(signatures), 7)
