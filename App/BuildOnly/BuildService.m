@@ -124,7 +124,7 @@ NSNotificationName const PBTrialChanged = @"PocketBuild.TrialChanged";
     }
     config[@"sdkVersion"] = sdk;
     if (usesCXX) {
-        NSString *source = @"#include <vector>\nint pocketbuild_trial_cpp() { return std::vector<int>{1, 2, 3}.size(); }\n";
+        NSString *source = @"#include <type_traits>\nstatic_assert(std::is_integral<int>::value);\nint pocketbuild_trial_cpp() { return 42; }\n";
         if (![source writeToFile:[project stringByAppendingPathComponent:@"trial.cpp"] atomically:YES
             encoding:NSUTF8StringEncoding error:error]) {
             [files removeItemAtPath:workspace error:nil];
