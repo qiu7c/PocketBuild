@@ -73,14 +73,15 @@ class PocketBuildPackagingTests(unittest.TestCase):
                 info = plistlib.loads(archive.read("Payload/PocketBuild.app/Info.plist"))
                 self.assertEqual(info["CFBundleIdentifier"], "com.qiu7c.pocketbuild")
                 self.assertEqual(info["CFBundleIcons"]["CFBundlePrimaryIcon"]["CFBundleIconName"], "AppIcon")
+                self.assertEqual(plistlib.loads(archive.read("Payload/PocketBuild.app/commandDictionary.plist")), {})
+                commands = plistlib.loads(archive.read("Payload/PocketBuild.app/extraCommandsDictionary.plist"))
+                self.assertEqual(set(commands), {"clang", "ld64.lld"})
             manifest = json.loads((output / "packages/PocketBuild-packages.json").read_text(encoding="utf-8"))
             self.assertEqual({item["id"] for item in manifest["packages"]}, {"support","sdk16","sdk26"})
             for item in manifest["packages"]:
                 self.assertEqual(len(item["sha256"]), 64)
                 self.assertTrue((output / "packages" / item["url"]).exists())
             app_command = next(cmd for cmd in commands if "clang" in cmd and "-dynamiclib" not in cmd)
-            self.assertIn("-Wl,-needed_framework,libLLVM", app_command)
-            self.assertIn("-Wl,-rpath,@executable_path/Frameworks", app_command)
             self.assertFalse(any("/App/AI/" in part.replace("\\", "/") for part in app_command))
             signatures = [cmd[-1] for cmd in commands if cmd[0] == "codesign"]
             self.assertEqual(len(signatures), 7)

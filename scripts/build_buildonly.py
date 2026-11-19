@@ -12,7 +12,7 @@ import zipfile
 
 ROOT = Path(__file__).resolve().parents[1]
 VERSION = "0.1.0"
-BUILD_NUMBER = "3"
+BUILD_NUMBER = "4"
 
 
 def compiler_source() -> str:
@@ -177,6 +177,12 @@ def main() -> None:
         subprocess.run(["codesign", "--force", "--sign", "-", str(frameworks / (name + ".framework"))], check=True)
     shutil.copytree(frameworks, app / "Frameworks")
 
+    commands = {name:[framework + ".framework/" + framework,"main","","no"]
+                for name,framework in (("clang","clang"),("ld64.lld","lld"))}
+    # ios_system bootstraps from the main bundle before merging the optional command list.
+    (app / "commandDictionary.plist").write_bytes(plistlib.dumps({}))
+    (app / "extraCommandsDictionary.plist").write_bytes(plistlib.dumps(commands))
+
     if args.packages:
         output = build / "packages"
         output.mkdir(exist_ok=True)
@@ -188,8 +194,6 @@ def main() -> None:
         support.mkdir()
         for name in ("logos", "Include", "ClangInclude", "Perl", "VendorFrameworks", "CompatibilityRules", "SampleProject"):
             shutil.copytree(ROOT / "Resources" / name, support / name)
-        commands = {name:[framework + ".framework/" + framework,"main","","no"]
-                    for name,framework in (("clang","clang"),("ld64.lld","lld"))}
         for name,value in (("commands.plist",commands),("extraCommandsDictionary.plist",commands),("commandDictionary.plist",{})):
             (support / name).write_bytes(plistlib.dumps(value))
         for identifier, title, source in (
@@ -221,12 +225,7 @@ def main() -> None:
         "BuildOnly/BuildHome.m", "BuildOnly/ToolsHome.m", "BuildOnly/BuildService.m", "BuildOnly/Toolchains.m",
         "BuildOnly/ScreenAwake.m", "Remote/DXRemoteHTTP.m", "ArchiveImport.m", "TheosMakefile.m",
     )]
-    # Match upstream's startup LLVM load and executable-level framework search path.
-    subprocess.run(common + [
-        "-F" + str(frameworks), "-framework", "ios_system",
-        "-Wl,-needed_framework,libLLVM", "-Wl,-rpath,@executable_path/Frameworks",
-        *map(str,sources), "-o", str(app / "PocketBuild"),
-    ],check=True)
+    subprocess.run(common + [*map(str,sources), "-o", str(app / "PocketBuild")],check=True)
     icons_info = build / "icons-info.plist"
     subprocess.run([
         "xcrun","actool","--compile",str(app),"--platform",platform,"--minimum-deployment-target","15.0",
