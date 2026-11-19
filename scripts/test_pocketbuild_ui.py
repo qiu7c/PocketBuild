@@ -60,6 +60,13 @@ def launch(uid, screen, *extra):
     deadline = time.monotonic() + 60
     while not ready.exists():
         if time.monotonic() >= deadline:
+            sim("io", uid, "screenshot", str(OUT / ("failed-" + screen + ".png")), check=False)
+            logs = sim("spawn", uid, "log", "show", "--last", "3m", "--style", "compact",
+                       "--predicate", 'process == "PocketBuild"', check=False)
+            (OUT / ("failed-" + screen + ".log")).write_text(logs.stdout + logs.stderr, encoding="utf-8")
+            for report in (Path.home() / "Library/Logs/DiagnosticReports").glob("PocketBuild*"):
+                if report.is_file():
+                    shutil.copy2(report, OUT / report.name)
             raise AssertionError("Native screen did not appear: " + screen)
         time.sleep(.1)
     appeared = json.loads(ready.read_text())
@@ -96,7 +103,7 @@ def screenshot(uid, name):
 
 uid = boot(phone)
 sim("ui", uid, "appearance", "light")
-for screen in ("intro", "guide", "resources", "pairing", "home", "settings", "tools"):
+for screen in ("resources", "intro", "guide", "pairing", "home", "settings", "tools"):
     launch(uid, screen)
     screenshot(uid, "light-" + screen)
 
