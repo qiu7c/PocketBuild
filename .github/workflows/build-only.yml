@@ -41,3 +41,24 @@ jobs:
           name: PocketBuild-resources
           path: build/pocketbuild-device/packages/
           if-no-files-found: error
+  interface:
+    runs-on: macos-15-intel
+    env:
+      DEVELOPER_DIR: /Applications/Xcode_16.4.app/Contents/Developer
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Fetch verified compiler frameworks
+        run: python3 scripts/fetch_toolchain.py
+      - name: Build simulator App
+        run: python3 scripts/build_buildonly.py --simulator
+      - name: Check native screens and fixed pairing
+        run: python3 scripts/test_pocketbuild_ui.py
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: PocketBuild-interface
+          path: build/pocketbuild-ui/
+          if-no-files-found: warn

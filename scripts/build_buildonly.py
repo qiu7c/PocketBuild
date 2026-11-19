@@ -12,7 +12,7 @@ import zipfile
 
 ROOT = Path(__file__).resolve().parents[1]
 VERSION = "0.1.0"
-BUILD_NUMBER = "6"
+BUILD_NUMBER = "7"
 
 
 def compiler_source() -> str:
@@ -222,6 +222,7 @@ def main() -> None:
 
     shutil.copytree(ROOT / "Resources/BuildWeb", app / "BuildWeb")
     shutil.copytree(ROOT / "Resources/AppTemplate", app / "AppTemplate")
+    shutil.copy2(ROOT / "Resources/PocketBuild/PocketBuild-icon-square.png", app / "BrandMark.png")
     notices = app / "ThirdPartyNotices"
     notices.mkdir()
     for filename in ("LICENSE", "COPYRIGHT", "THIRD_PARTY_NOTICES.md"):
@@ -230,9 +231,18 @@ def main() -> None:
         shutil.copytree(ROOT / "Resources/ThirdPartyNotices", notices, dirs_exist_ok=True)
     sources = [ROOT / "App" / name for name in (
         "BuildOnly/BuildHome.m", "BuildOnly/ToolsHome.m", "BuildOnly/BuildService.m", "BuildOnly/Toolchains.m",
-        "BuildOnly/ScreenAwake.m", "Remote/DXRemoteHTTP.m", "ArchiveImport.m", "TheosMakefile.m",
+        "BuildOnly/ScreenAwake.m", "BuildOnly/Appearance.m", "BuildOnly/ConnectionSettings.m", "BuildOnly/Welcome.m",
+        "Remote/DXRemoteHTTP.m", "ArchiveImport.m", "TheosMakefile.m",
     )]
-    subprocess.run(common + [*map(str,sources), "-o", str(app / "PocketBuild")],check=True)
+    simulated = []
+    if args.simulator:
+        entitlements = build / "simulated-entitlements.plist"
+        entitlements.write_bytes(plistlib.dumps({
+            "application-identifier":"PBLOCAL01.com.qiu7c.pocketbuild",
+            "keychain-access-groups":["PBLOCAL01.com.qiu7c.pocketbuild"],
+        }))
+        simulated = ["-Xlinker","-sectcreate","-Xlinker","__TEXT","-Xlinker","__entitlements","-Xlinker",str(entitlements)]
+    subprocess.run(common + simulated + [*map(str,sources), "-o", str(app / "PocketBuild")],check=True)
     icons_info = build / "icons-info.plist"
     subprocess.run([
         "xcrun","actool","--compile",str(app),"--platform",platform,"--minimum-deployment-target","15.0",

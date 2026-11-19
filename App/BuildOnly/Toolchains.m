@@ -42,12 +42,13 @@ static NSError *PackageError(NSString *message) {
 - (void)publish {
     [NSNotificationCenter.defaultCenter postNotificationName:PBPackagesChanged object:self];
 }
-- (void)loadManifest:(NSURL *)url {
-    if (self.busy || self.buildRunning) return;
+- (void)setBuildRunning:(BOOL)buildRunning { _buildRunning=buildRunning; [self publish]; }
+- (BOOL)loadManifest:(NSURL *)url {
+    if (self.busy || self.buildRunning) { self.message=@"请等待当前安装或构建结束"; [self publish]; return NO; }
     if (!url.host.length || ![@[@"https",@"http"] containsObject:url.scheme.lowercaseString]) {
         self.message = @"请填写有效的 HTTPS 或局域网 HTTP 清单地址";
         [self publish];
-        return;
+        return NO;
     }
     self.busy = YES;
     self.message = @"正在读取资源清单";
@@ -99,6 +100,7 @@ static NSError *PackageError(NSString *message) {
         [self publish];
     }];
     [self.task resume];
+    return YES;
 }
 - (NSDictionary *)status {
     NSDictionary *installed = [NSDictionary dictionaryWithContentsOfFile:

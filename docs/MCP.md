@@ -34,7 +34,7 @@ python -m venv .venv
 }
 ```
 
-其他客户端选择 stdio 传输，分别填写同样的 command、args 和环境变量。手机地址以 App 实际显示值为准。每次重启手机服务会刷新连接码，更新配置后重启客户端中的 MCP 进程。
+其他客户端选择 stdio 传输，分别填写同样的 command、args 和环境变量。手机地址以 App 实际显示值为准。建议在手机「连接设置」开启固定连接码，保存后重启服务，再把显示的码填入 POCKETBUILD_TOKEN；固定码跨 App 和服务重启保留。随机模式每次启动服务刷新连接码，更新配置后重启客户端中的 MCP 进程。
 
 该桥使用官方 [MCP Python SDK](https://github.com/modelcontextprotocol/python-sdk/tree/v1.x) 的 FastMCP 和 stdio 传输，依赖限制在 v1 系列。单独在终端启动时等待协议输入是正常现象，实际由 AI 客户端启动并调用。
 
@@ -87,7 +87,7 @@ download_artifacts({"job_id":"同一个 id","output_directory":"artifacts"})
 ## 连接排查
 
 - 先用 Windows 浏览器打开手机显示的地址。浏览器也打不开时检查手机前台状态、选中的热点地址和 Windows 网络连接。
-- HTTP 401 表示连接码不匹配。手机停止再启动服务后需要更新连接码。
-- 提示缺少 SDK 或构建资源时，在手机工具链页面安装组件。
+- HTTP 401 表示连接码不匹配。随机模式重启服务后需要更新连接码；固定模式修改、保存并重启服务后更新。
+- 提示缺少 SDK 或构建资源时，在手机「管理组件」页面安装组件。
 - 指定任务返回 404 时检查是否使用了另一任务编号，或手机 App 是否重启。
 - Build 6 已在 iOS 16.3.1 / TrollStore 环境通过热点局域网完成真实 MCP 联调，包括工程上传、原始 Logos 源码构建为 arm64 dylib/三种 DEB，以及日志和产物下载。插件宿主运行、普通证书及其他系统环境仍需验证。

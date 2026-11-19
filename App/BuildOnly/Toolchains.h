@@ -9,7 +9,7 @@ FOUNDATION_EXPORT NSNotificationName const PBPackagesChanged;
 @property (nonatomic) BOOL buildRunning;
 @property (nonatomic, readonly) double progress;
 @property (nonatomic, readonly) NSString *message;
-- (void)loadManifest:(NSURL *)url;
+- (BOOL)loadManifest:(NSURL *)url;
 - (void)install:(NSString *)identifier;
 - (void)cancel;
 - (BOOL)remove:(NSString *)identifier error:(NSError **)error;

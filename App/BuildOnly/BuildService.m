@@ -10,6 +10,7 @@
 #import <net/if.h>
 #import <errno.h>
 #import <stdio.h>
+#import <Security/Security.h>
 
 @interface DXBuildService ()
 @property (nonatomic) DXRemoteHTTP *http;
@@ -18,9 +19,54 @@
 @property (nonatomic) NSMutableDictionary *job;
 @property (nonatomic) NSMutableDictionary<NSString *, NSMutableDictionary *> *jobs;
 @property (nonatomic) NSMutableDictionary<NSString *, NSMutableDictionary *> *uploads;
+@property (nonatomic) BOOL activeCodeIsFixed;
+@property (nonatomic) NSDate *startedAt, *lastRequestAt;
+@property (nonatomic) NSUInteger requestCount;
 @end
 
 @implementation DXBuildService
+
+- (BOOL)fixedCodeEnabled { return [NSUserDefaults.standardUserDefaults boolForKey:@"FixedConnectionCode"]; }
+- (void)setFixedCodeEnabled:(BOOL)enabled { [NSUserDefaults.standardUserDefaults setBool:enabled forKey:@"FixedConnectionCode"]; }
+- (NSString *)fixedCode {
+    CFTypeRef data = NULL;
+    OSStatus status = SecItemCopyMatching((__bridge CFDictionaryRef)@{
+        (__bridge id)kSecClass:(__bridge id)kSecClassGenericPassword,
+        (__bridge id)kSecAttrService:@"com.qiu7c.pocketbuild.pairing", (__bridge id)kSecAttrAccount:@"fixed-code",
+        (__bridge id)kSecReturnData:@YES}, &data);
+    return status == errSecSuccess ? [[NSString alloc] initWithData:CFBridgingRelease(data) encoding:NSUTF8StringEncoding] : nil;
+}
++ (NSString *)newConnectionCode:(NSError **)error {
+    unsigned char bytes[16];
+    OSStatus status = SecRandomCopyBytes(kSecRandomDefault, sizeof(bytes), bytes);
+    if (status != errSecSuccess) {
+        if (error) *error = [NSError errorWithDomain:NSOSStatusErrorDomain code:status userInfo:nil];
+        return nil;
+    }
+    NSMutableString *code = [NSMutableString string];
+    for (NSUInteger i=0; i<sizeof(bytes); i++) [code appendFormat:@"%02x",bytes[i]];
+    return code;
+}
+- (BOOL)saveFixedCode:(NSString *)code error:(NSError **)error {
+    if (!code.length) code = [DXBuildService newConnectionCode:error];
+    if (!code) return NO;
+    if ([code rangeOfString:@"^[A-Za-z0-9_-]{8,64}$" options:NSRegularExpressionSearch].location == NSNotFound) {
+        if (error) *error = [NSError errorWithDomain:@"PocketBuild.Pairing" code:1 userInfo:@{NSLocalizedDescriptionKey:@"连接码使用 8–64 位字母、数字、下划线或短横线。"}];
+        return NO;
+    }
+    NSDictionary *query = @{(__bridge id)kSecClass:(__bridge id)kSecClassGenericPassword,
+        (__bridge id)kSecAttrService:@"com.qiu7c.pocketbuild.pairing", (__bridge id)kSecAttrAccount:@"fixed-code"};
+    NSDictionary *attributes = @{(__bridge id)kSecValueData:[code dataUsingEncoding:NSUTF8StringEncoding],
+        (__bridge id)kSecAttrAccessible:(__bridge id)kSecAttrAccessibleWhenUnlockedThisDeviceOnly};
+    OSStatus status = SecItemUpdate((__bridge CFDictionaryRef)query, (__bridge CFDictionaryRef)attributes);
+    if (status == errSecItemNotFound) {
+        NSMutableDictionary *item = [query mutableCopy]; [item addEntriesFromDictionary:attributes];
+        status = SecItemAdd((__bridge CFDictionaryRef)item, NULL);
+    }
+    if (status != errSecSuccess && error) *error = [NSError errorWithDomain:NSOSStatusErrorDomain code:status userInfo:@{NSLocalizedDescriptionKey:[NSString stringWithFormat:@"固定连接码保存失败（%d）",(int)status]}];
+    return status == errSecSuccess;
+}
+- (NSDictionary *)latestJob { return self.job ?: @{}; }
 
 + (instancetype)shared {
     static DXBuildService *service;
@@ -68,9 +114,11 @@
         _http.stateChanged = ^(NSString *state) {
             BOOL running = [state isEqual:@"running"];
             weak.state = running ? @"运行中" : @"监听失败，请检查地址和端口";
+            if (running && !weak.startedAt) weak.startedAt = NSDate.date;
             if (!running) {
                 weak.origin = nil;
                 weak.code = nil;
+                weak.startedAt = nil;
                 TFScreenAwakeSet(@"remote-build", NO);
             }
             if (weak.changed) weak.changed();
@@ -81,21 +129,23 @@
 
 - (void)startAddress:(NSString *)address port:(NSUInteger)port {
     [self stop];
-    unsigned char bytes[16];
-    if (SecRandomCopyBytes(kSecRandomDefault, sizeof(bytes), bytes) != errSecSuccess) {
-        self.state = @"无法生成连接码";
+    NSError *error = nil;
+    self.activeCodeIsFixed = self.fixedCodeEnabled;
+    NSString *code = self.activeCodeIsFixed ? self.fixedCode : [DXBuildService newConnectionCode:&error];
+    if (self.activeCodeIsFixed && !code && [self saveFixedCode:@"" error:&error]) code = self.fixedCode;
+    if (!code) {
+        self.state = error.localizedDescription ?: @"无法取得连接码";
         if (self.changed) self.changed();
         return;
     }
-    NSMutableString *code = [NSMutableString string];
-    for (NSUInteger i = 0; i < sizeof(bytes); i++) [code appendFormat:@"%02x", bytes[i]];
-    NSError *error = nil;
     if (![self.http startAddress:address port:port error:&error]) {
         self.state = error.localizedDescription;
     } else {
         self.code = code;
         self.origin = self.http.origin;
         self.state = @"正在启动";
+        self.requestCount = 0;
+        self.lastRequestAt = nil;
         TFScreenAwakeSet(@"remote-build", YES);
     }
     if (self.changed) self.changed();
@@ -109,6 +159,7 @@
     [self.uploads removeAllObjects];
     self.origin = nil;
     self.code = nil;
+    self.startedAt = nil;
     self.state = @"已停止";
     TFScreenAwakeSet(@"remote-build", NO);
     if (self.changed) self.changed();
@@ -132,6 +183,8 @@ static NSDictionary *Failure(NSInteger status, NSString *message) {
     if (!self.code || ![authorization isEqual:[@"Bearer " stringByAppendingString:self.code]]) {
         return Failure(401, @"连接码无效，请查看手机上的当前连接码");
     }
+    self.requestCount++;
+    self.lastRequestAt = NSDate.date;
     NSURLComponents *components = [NSURLComponents componentsWithString:route];
     NSMutableDictionary *query = [NSMutableDictionary dictionary];
     for (NSURLQueryItem *item in components.queryItems) query[item.name] = item.value;
@@ -297,7 +350,7 @@ static NSDictionary *Failure(NSInteger status, NSString *message) {
         if (![files copyItemAtPath:root toPath:copy error:&error]) return Failure(500, error.localizedDescription);
         PBToolchains.shared.buildRunning = YES;
         NSString *buildID = NSUUID.UUID.UUIDString;
-        self.job = [@{@"id":buildID, @"state": @"running", @"project": identifier, @"artifacts": @[]} mutableCopy];
+        self.job = [@{@"id":buildID, @"state": @"running", @"project": identifier, @"artifacts": @[], @"startedAt":@(NSDate.date.timeIntervalSince1970)} mutableCopy];
         self.jobs[buildID] = self.job;
         self.compiler.importedProject = copy;
         self.compiler.importedSource = nil;
@@ -309,6 +362,8 @@ static NSDictionary *Failure(NSInteger status, NSString *message) {
         self.compiler.buildCompletion = ^(BOOL success) {
             DXBuildService *service = DXBuildService.shared;
             service.job[@"state"] = service.compiler.cancelRequested ? @"cancelled" : success ? @"succeeded" : @"failed";
+            service.job[@"finishedAt"] = @(NSDate.date.timeIntervalSince1970);
+            if (success) { service.job[@"progress"]=@1; service.job[@"stage"]=@"构建完成"; }
             PBToolchains.shared.buildRunning = NO;
             NSMutableArray *artifacts = [NSMutableArray array];
             for (NSString *name in [files contentsOfDirectoryAtPath:service.compiler.lastBuild error:nil]) {

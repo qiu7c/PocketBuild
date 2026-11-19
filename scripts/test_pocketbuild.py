@@ -36,6 +36,8 @@ class PocketBuildPackagingTests(unittest.TestCase):
                 (path / "fixture.txt").write_text(name)
             for name in ("LICENSE", "COPYRIGHT", "THIRD_PARTY_NOTICES.md"):
                 (root / name).write_text(name)
+            (root / "Resources/PocketBuild").mkdir()
+            (root / "Resources/PocketBuild/PocketBuild-icon-square.png").write_bytes(b"brand fixture")
             for name, version in (("Resources/SDK", "16.4"), ("LocalSDKs/iPhoneOS26.0.sdk", "26.0")):
                 path = root / name
                 path.mkdir(parents=True)
@@ -71,6 +73,7 @@ class PocketBuildPackagingTests(unittest.TestCase):
                     self.assertIn("Payload/PocketBuild.app/Frameworks/" + framework + ".framework/" + framework, names)
                 self.assertFalse(any("SDK.zip" in name or "SDK26.zip" in name or "ClangInclude/" in name for name in names))
                 info = plistlib.loads(archive.read("Payload/PocketBuild.app/Info.plist"))
+                self.assertIn("Payload/PocketBuild.app/BrandMark.png", names)
                 self.assertEqual(info["CFBundleIdentifier"], "com.qiu7c.pocketbuild")
                 self.assertEqual(info["CFBundleIcons"]["CFBundlePrimaryIcon"]["CFBundleIconName"], "AppIcon")
                 self.assertEqual(plistlib.loads(archive.read("Payload/PocketBuild.app/commandDictionary.plist")), {})
