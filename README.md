@@ -72,6 +72,8 @@ IPA 使用 ad-hoc 构建签名。普通证书安装前需要对 App 和所有内
 
 2026-11-19，源码提交 da63fc7 通过首次 macOS 云编译，生成 PocketBuild IPA 和按需下载资源包。Windows 已通过设备 SDK 语法检查、浏览器协议模拟、真实 stdio MCP 与模拟手机 HTTP 服务联调，以及模拟 Apple 工具的安装包流程检查；macOS 已通过生产 App 打包代码配合 Xcode 工具的可执行链接、签名校验、资源布局和取消清理回归。
 
-手机内嵌 Clang/LLD 的实际构建、真实证书签名后的安装运行、iPhone 热点连接及各越狱环境加载仍待真机验收，arm64e 状态为待验证。Windows 独立 exe 尚未实现。
+Build 6 已在 iOS 16.3.1 / TrollStore 环境完成热点局域网 MCP 实测：上传原始 Logos 工程后，手机完成预处理、arm64 编译、链接、签名校验及有根/无根/隐根三个 DEB 打包，产物已下载并核对包内架构、目录和依赖。修复了启动命令字典遗漏、临时路径标准化不一致及诊断日志混入 Logos 源码的问题。
+
+arm64e 插件试构建中，Clang 生成了 CPU 子类型 2 的对象文件，链接命令返回 0，但输出未通过 arm64e 架构校验，未导出为成功产物。手机本机 App/IPA 构建、普通证书安装、插件在宿主中的运行及其他系统环境仍待验收。Windows 独立 exe 尚未实现。
 
 上游代码和许可证保留在仓库中。PocketBuild 构建目标采用独立源文件清单，不包含上游聊天、模型服务、Agent 或 iSH 终端模块。上游项目说明见 docs/UPSTREAM_README.md，版权和第三方清单见 COPYRIGHT、LICENSE、THIRD_PARTY_NOTICES.md。

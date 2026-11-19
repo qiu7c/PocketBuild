@@ -33,7 +33,7 @@ PocketBuild 本身最低 iOS 15.0。生成的 App 由 deploymentTarget 指定最
 
 先安装构建资源与至少一套 SDK。可选 SDK 16.4 或 26.0。SDK 26.0 配合当前 Clang 14 处理 C++/Objective-C++ 时还需要 SDK 16.4 的标准库兼容头文件。
 
-构建配置保留 arm64 和 arm64e。arm64e 当前状态为待验证：上游代码在链接后检查 Mach-O 的 CPU 子类型，发现与 arm64e 不符时会报错并停止导出。尚未使用这套手机内嵌工具链生成、检查并在真机加载 arm64e 产物，不能仅凭源码中的注释判断实际支持结果。需要检查实际产物的架构与 ABI，并完成目标宿主中的加载和运行验证。
+构建配置保留 arm64 和 arm64e。在 iOS 16.3.1 的插件试构建中，Clang 生成了 CPU 子类型 2 的 arm64e 对象文件，链接命令返回 0，但输出未通过 arm64e 子类型校验，因此未导出为成功产物。这是当前内嵌工具链的一次实际结果；arm64e App 构建及宿主加载尚未验证。
 
 ## 构建产物
 
@@ -42,7 +42,7 @@ PocketBuild 本身最低 iOS 15.0。生成的 App 由 deploymentTarget 指定最
 3. 组装 Payload/产品名.app，写入 Info.plist，复制配置的普通资源。
 4. 打包 产品名-unsigned.ipa，保留可执行权限。浏览器或 MCP 可以下载 IPA、report.json、symbols.json 和 build.log。
 
-完整 .app 保存在手机 Documents/Build-任务目录/Payload 中，可通过文件共享访问。IPA 内可执行文件有链接器生成的 ad-hoc 签名，但没有安装用的证书签名与描述文件。下载后按实际安装方式完成签名，安装和运行需要真机验证。
+完整 .app 保存在手机 Documents/Build-任务目录/Payload 中，浏览器和 MCP 以 IPA 提供下载。IPA 内可执行文件有链接器生成的 ad-hoc 签名，但没有安装用的证书签名与描述文件。下载后按实际安装方式完成签名，安装和运行需要真机验证。
 
 ## 当前边界
 
@@ -52,4 +52,4 @@ PocketBuild 本身最低 iOS 15.0。生成的 App 由 deploymentTarget 指定最
 
 ## 验证
 
-Windows 已检查原生代码语法及 MCP、浏览器传输流程。2026-11-19，[首次 macOS 云编译](https://github.com/qiu7c/PocketBuild/actions/runs/44488562631)通过了 python3 scripts/test_pocketbuild_app.py，使用生产打包代码和 Xcode 工具验证可执行链接参数、签名验证、IPA 元数据、资源布局、权限与取消清理，并成功构建 PocketBuild 本身的 IPA。该结果不代替 iPhone 内嵌 Clang/LLD 编译与安装验收，arm64e 产物尚未实测。
+Windows 已检查原生代码语法及 MCP、浏览器传输流程。2026-11-19，[首次 macOS 云编译](https://github.com/qiu7c/PocketBuild/actions/runs/44488562631)通过了 python3 scripts/test_pocketbuild_app.py，使用生产打包代码和 Xcode 工具验证可执行链接参数、签名验证、IPA 元数据、资源布局、权限与取消清理，并成功构建 PocketBuild 本身的 IPA。Build 6 已在手机上验证 Logos 插件到 arm64 dylib 和三种 DEB 的完整构建；手机本机 UIKit App/IPA 构建和安装仍待验收。
