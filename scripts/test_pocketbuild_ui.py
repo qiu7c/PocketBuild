@@ -30,8 +30,12 @@ def sim(*args, check=True):
 
 
 devices = json.loads(sim("list", "devices", "available", "--json").stdout)["devices"]
-phones = [d for runtime, entries in sorted(devices.items(), reverse=True) if "iOS" in runtime
+sdk = subprocess.check_output(["xcrun", "--sdk", "iphonesimulator", "--show-sdk-version"], text=True).strip()
+runtime_id = "com.apple.CoreSimulator.SimRuntime.iOS-" + sdk.replace(".", "-")
+print("Testing runtime:", runtime_id, flush=True)
+phones = [d for runtime, entries in devices.items() if runtime == runtime_id
           for d in entries if d["name"].startswith("iPhone")]
+assert phones, "Install the simulator runtime matching the selected Xcode SDK: " + sdk
 phone = next((d for d in phones if d["name"] == "iPhone 16"), phones[0])
 small = next((d for d in phones if "SE" in d["name"]), None)
 
