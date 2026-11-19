@@ -6,14 +6,14 @@ PocketBuild 用 iPhone / iPad 为 Windows 提供源码编辑、插件和 App 编
 
 发布一个 PocketBuild IPA。Clang、LLVM、LLD、Perl 和进程内运行支持随 App 打包并一起签名。SDK、Clang 头文件、Logos 和构建辅助资源按需下载。普通证书签名、TrollStore 和越狱安装使用同一份待签名 IPA；各安装环境的实际加载结果需要真机验收。
 
-下载入口见 [GitHub Actions](https://github.com/qiu7c/PocketBuild/actions/workflows/build-only.yml)，选择最近成功的构建。在 Artifacts 下载 PocketBuild（内含待签名 IPA）和 PocketBuild-resources（内含资源清单、构建资源及 SDK ZIP）。
+在 [GitHub Actions](https://github.com/qiu7c/PocketBuild/actions/workflows/build-only.yml) 的构建产物中下载 PocketBuild IPA。所需组件可在 App 内直接下载。自建镜像可使用同次构建的 PocketBuild-resources 产物。
 
 PocketBuild 最低 iOS 15.0，内嵌 arm64 编译器。当前构建入口支持 Objective-C、Objective-C++、C、C++ 和 Logos 插件，输出 dylib、deb；支持使用代码创建界面的 UIKit App，输出 .app 目录及待签名 IPA。工程导入复用 MobileCompiler.json 和受支持的 Theos Makefile 解析。Swift / SwiftUI、Storyboard、XIB、资源目录编译及完整 Xcode 工程解析尚未接入。
 
 ## 连接 Windows
 
 1. 手机上开启个人热点，让 Windows 连接。也可以连接同一局域网。
-2. 首次打开 PocketBuild，跟随介绍完成连接教程、资源清单和配对方式配置。工作台会自动读取热点或 Wi-Fi IPv4；可点「刷新地址」，或在右上角「连接设置」选择、手动填写本机地址。
+2. 首次打开 PocketBuild，跟随介绍了解连接和配对方式，并从组件库安装所需组件。工作台会自动读取热点或 Wi-Fi IPv4，可点「刷新地址」，或在右上角「连接设置」选择或手动填写本机地址。
 3. 点击「启动服务」。在 Windows 浏览器打开手机显示的访问地址，填写手机显示的连接码。点「复制地址」或「连接信息」可复制。
 4. 在浏览器选择「插件 / dylib」或「UIKit App / IPA」，新建项目。App 类型会生成可编辑的 UIKit 模板。也可以上传已有工程文件夹。
 5. 选择文件进行编辑，保存后点击「编译」。查看阶段和日志，结束后下载 dylib、deb、IPA、报告或日志。可在构建中请求取消。
@@ -37,17 +37,17 @@ App 构建包含源文件编译、MH_EXECUTE 可执行文件链接、ad-hoc 签�
 
 ## 按需安装 SDK 和头文件
 
-先下载并解压云编译的 PocketBuild-resources 产物。解压目录内应有 PocketBuild-packages.json 以及 support、sdk16 和 sdk26 三个 ZIP。
+打开「管理组件 → 组件库」，可直接安装「构建资源」「iOS 16.4 SDK」和「iOS 26.0 SDK」。首次构建推荐前两项，需要新系统头文件时再装 iOS 26.0 SDK。iOS 26 SDK 配合 Clang 14 编译 C++ 时，还需要 iOS 16.4 SDK 提供兼容的标准库头文件。下载完成后会校验 SHA-256，再解压安装。默认下载包托管在 [PocketBuild 下载源](https://github.com/qiu7c/PocketBuild/releases/tag/resources-v1)。
 
-在 Windows PowerShell 执行以下命令，将 IP 和资源目录改为实际值：
+若要使用局域网镜像，解压 PocketBuild-resources 云编译产物，用 PowerShell 启动 HTTP 服务。请把 IP 和目录改为实际值。
 
     python -m http.server 8000 --bind 172.20.10.5 --directory C:/path/to/resources
 
-在手机「管理组件 → 组件库」里填写资源清单地址，例如：
+点组件库右上角的菜单，填入备用清单地址并点「启用备用源」。
 
     http://172.20.10.5:8000/PocketBuild-packages.json
 
-点击「读取资源清单」，选择安装构建资源和需要的 SDK。下载会显示进度，完成后校验 SHA-256 再解压安装。iOS 26 SDK 配合 Clang 14 编译 C++ 时，还需要 iOS 16.4 SDK 提供兼容的标准库头文件。清单也支持 HTTPS 地址和相对于清单的资源地址。
+备用清单支持 HTTPS 和局域网 HTTP，包的地址可以相对于清单填写。备用清单可只覆盖部分组件，其余组件仍使用内置源。可在同一菜单点「恢复内置源」。
 
 构建资源与 SDK 都保存在 App 数据目录，重签覆盖安装时请保留 App 数据。下载取消或校验失败会保留原先安装成功的组件。构建过程中暂停组件安装和移除。
 

@@ -10,7 +10,7 @@
 @property UILabel *step;
 @property UIButton *next, *previous;
 @property UIImageView *brand;
-@property UITextField *manifestField, *fixedField;
+@property UITextField *fixedField;
 @property UISegmentedControl *mode;
 @end
 @implementation PBWelcomeController
@@ -29,10 +29,6 @@
         [footer.bottomAnchor constraintEqualToAnchor:self.view.keyboardLayoutGuide.topAnchor constant:-12],
         [self.next.heightAnchor constraintGreaterThanOrEqualToConstant:54]]];
     self.content=PBPageContent(self.view,footer.topAnchor);[self.view bringSubviewToFront:footer];
-    self.manifestField=[UITextField new];self.manifestField.borderStyle=UITextBorderStyleRoundedRect;self.manifestField.font=PBFont(14,UIFontWeightRegular);
-    self.manifestField.placeholder=@"https://…/PocketBuild-packages.json";self.manifestField.keyboardType=UIKeyboardTypeURL;self.manifestField.autocapitalizationType=UITextAutocapitalizationTypeNone;self.manifestField.autocorrectionType=UITextAutocorrectionTypeNo;
-    self.manifestField.text=[NSUserDefaults.standardUserDefaults stringForKey:@"PackageManifestURL"];
-    [self.manifestField.heightAnchor constraintEqualToConstant:48].active=YES;
     self.mode=[[UISegmentedControl alloc] initWithItems:@[@"固定连接码",@"每次随机"]];self.mode.selectedSegmentIndex=([NSUserDefaults.standardUserDefaults objectForKey:@"FixedConnectionCode"]?DXBuildService.shared.fixedCodeEnabled:YES)?0:1;
     [self.mode addTarget:self action:@selector(changeMode) forControlEvents:UIControlEventValueChanged];
     self.fixedField=[UITextField new];self.fixedField.borderStyle=UITextBorderStyleRoundedRect;self.fixedField.font=PBFont(14,UIFontWeightRegular);
@@ -73,8 +69,10 @@
         [self.content addArrangedSubview:PBLabel(@"按需准备，\n轻装开始。",32,UIFontWeightBold,UIColor.labelColor)];
         UIStackView *card=PBCard();[card addArrangedSubview:PBFeature(@"checkmark.seal",@"编译器已随 App 就位",@"Clang、LLVM、LLD 与 Perl 已包含在安装包中。")];
         [card addArrangedSubview:PBFeature(@"shippingbox",@"构建资源 + SDK",@"先安装构建资源与 iOS 16.4 SDK。需要新系统头文件时，再选择其他 SDK。")];[self.content addArrangedSubview:card];
-        UIStackView *source=PBCard();[source addArrangedSubview:PBLabel(@"资源清单地址",15,UIFontWeightSemibold,UIColor.labelColor)];[source addArrangedSubview:self.manifestField];
-        [source addArrangedSubview:PBLabel(@"可填写 HTTPS 地址，或电脑提供的局域网清单地址。也可以稍后在「组件库」配置。",13,UIFontWeightRegular,UIColor.secondaryLabelColor)];[self.content addArrangedSubview:source];
+        UIButton *library = PBButton(@"打开组件库", @"arrow.down.circle", NO);
+        [library addTarget:self action:@selector(openTools) forControlEvents:UIControlEventTouchUpInside];
+        [self.content addArrangedSubview:library];
+        [self.content addArrangedSubview:PBLabel(@"可以现在下载，也可以进入工作台后再安装。",13,UIFontWeightRegular,UIColor.secondaryLabelColor)];
     } else {
         [self.content addArrangedSubview:PBLabel(@"这台电脑，\n下次也认识。",32,UIFontWeightBold,UIColor.labelColor)];
         UIStackView *card=PBCard();[card addArrangedSubview:PBFeature(@"key.horizontal",@"选择连接码方式",@"固定码适合常用电脑和 MCP，随机码适合临时连接。")];
@@ -90,17 +88,13 @@
     [UIView animateWithDuration:.8 delay:0 usingSpringWithDamping:.8 initialSpringVelocity:.2 options:0 animations:^{self.brand.alpha=1;self.brand.transform=CGAffineTransformIdentity;} completion:nil];
 }
 - (void)changeMode { self.fixedField.hidden=self.mode.selectedSegmentIndex==1; }
+- (void)openTools { [self.navigationController pushViewController:PBToolsHome() animated:YES]; }
 - (void)back { [self.view endEditing:YES];self.page--;[self transition]; }
 - (void)advance {
     [self.view endEditing:YES];
     if(self.page<3){self.page++;[self transition];return;}
     NSError *error=nil;BOOL fixed=self.mode.selectedSegmentIndex==0;
     if(fixed&&![DXBuildService.shared saveFixedCode:self.fixedField.text error:&error]){PBShowError(self,error.localizedDescription);return;}
-    NSString *url=[self.manifestField.text stringByTrimmingCharactersInSet:NSCharacterSet.whitespaceAndNewlineCharacterSet];
-    if(url.length&&(![url isEqual:[NSUserDefaults.standardUserDefaults stringForKey:@"PackageManifestURL"]]||!PBToolchains.shared.catalog.count)) {
-        if(![PBToolchains.shared loadManifest:[NSURL URLWithString:url]]){PBShowError(self,PBToolchains.shared.message);return;}
-        [NSUserDefaults.standardUserDefaults setObject:url forKey:@"PackageManifestURL"];
-    }
     [DXBuildService.shared setFixedCodeEnabled:fixed];[self finishWithoutSetup];
 }
 - (void)transition {

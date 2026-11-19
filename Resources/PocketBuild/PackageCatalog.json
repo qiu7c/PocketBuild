@@ -1,0 +1,27 @@
+{
+  "schema": 1,
+  "version": "0.1.0",
+  "packages": [
+    {
+      "id": "support",
+      "title": "构建资源",
+      "url": "https://github.com/qiu7c/PocketBuild/releases/download/resources-v1/PocketBuild-support-0.1.0.zip",
+      "sha256": "d05db0f5f34c7c8ebd74954cda2015addd31853264ea721b072fe7892787707b",
+      "bytes": 10129195
+    },
+    {
+      "id": "sdk16",
+      "title": "iOS 16.4 SDK",
+      "url": "https://github.com/qiu7c/PocketBuild/releases/download/resources-v1/PocketBuild-sdk16-0.1.0.zip",
+      "sha256": "5da043c92f928fbeede50a1236236feea17b6f00ac09ff52b1853a352a15dc95",
+      "bytes": 35759055
+    },
+    {
+      "id": "sdk26",
+      "title": "iOS 26.0 SDK",
+      "url": "https://github.com/qiu7c/PocketBuild/releases/download/resources-v1/PocketBuild-sdk26-0.1.0.zip",
+      "sha256": "9fcb5cc0291ed6df1ea480172d1e695d991c0467c483f1a606f5b2a963e68cd0",
+      "bytes": 43195711
+    }
+  ]
+}

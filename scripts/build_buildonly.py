@@ -12,7 +12,7 @@ import zipfile
 
 ROOT = Path(__file__).resolve().parents[1]
 VERSION = "0.1.0"
-BUILD_NUMBER = "7"
+BUILD_NUMBER = "8"
 
 
 def compiler_source() -> str:
@@ -223,6 +223,7 @@ def main() -> None:
     shutil.copytree(ROOT / "Resources/BuildWeb", app / "BuildWeb")
     shutil.copytree(ROOT / "Resources/AppTemplate", app / "AppTemplate")
     shutil.copy2(ROOT / "Resources/PocketBuild/PocketBuild-icon-square.png", app / "BrandMark.png")
+    shutil.copy2(ROOT / "Resources/PocketBuild/PackageCatalog.json", app / "PackageCatalog.json")
     notices = app / "ThirdPartyNotices"
     notices.mkdir()
     for filename in ("LICENSE", "COPYRIGHT", "THIRD_PARTY_NOTICES.md"):

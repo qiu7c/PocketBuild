@@ -13,6 +13,7 @@ static NSError *PackageError(NSString *message) {
 
 @interface PBToolchains ()
 @property NSArray<NSDictionary *> *catalog;
+@property NSArray<NSDictionary *> *bundledCatalog;
 @property BOOL busy;
 @property double progress;
 @property NSString *message;
@@ -31,9 +32,17 @@ static NSError *PackageError(NSString *message) {
 }
 - (instancetype)init {
     if ((self = [super init])) {
-        NSString *path = [PBPackagesDirectory() stringByAppendingPathComponent:@"catalog.plist"];
-        _catalog = [NSArray arrayWithContentsOfFile:path] ?: @[];
-        _message = @"请加载资源清单，选择需要的组件。";
+        NSString *catalogPath = [NSBundle.mainBundle pathForResource:@"PackageCatalog" ofType:@"json"];
+        NSData *catalogData = catalogPath ? [NSData dataWithContentsOfFile:catalogPath] : nil;
+        NSDictionary *catalog = catalogData ? [NSJSONSerialization JSONObjectWithData:catalogData options:0 error:nil] : nil;
+        _bundledCatalog = catalog[@"packages"] ?: @[];
+        _catalog = _bundledCatalog;
+        if ([NSUserDefaults.standardUserDefaults boolForKey:@"UseCustomPackageSource"]) {
+            NSString *path = [PBPackagesDirectory() stringByAppendingPathComponent:@"source-overrides.plist"];
+            NSDictionary *overrides = [NSDictionary dictionaryWithContentsOfFile:path];
+            if (overrides.count) [self applySourceOverrides:overrides];
+        }
+        _message = @"";
         _session = [NSURLSession sessionWithConfiguration:NSURLSessionConfiguration.defaultSessionConfiguration
             delegate:self delegateQueue:NSOperationQueue.mainQueue];
     }
@@ -43,6 +52,20 @@ static NSError *PackageError(NSString *message) {
     [NSNotificationCenter.defaultCenter postNotificationName:PBPackagesChanged object:self];
 }
 - (void)setBuildRunning:(BOOL)buildRunning { _buildRunning=buildRunning; [self publish]; }
+- (BOOL)usingCustomSource { return self.catalog != self.bundledCatalog; }
+- (void)applySourceOverrides:(NSDictionary<NSString *, NSDictionary *> *)overrides {
+    NSMutableArray *resolved = [NSMutableArray arrayWithCapacity:self.bundledCatalog.count];
+    for (NSDictionary *item in self.bundledCatalog) {
+        [resolved addObject:overrides[item[@"id"]] ?: item];
+    }
+    self.catalog = resolved;
+}
+- (void)useDefaultSource {
+    self.catalog = self.bundledCatalog;
+    self.message = @"已恢复 PocketBuild 下载源";
+    [NSUserDefaults.standardUserDefaults removeObjectForKey:@"UseCustomPackageSource"];
+    [self publish];
+}
 - (BOOL)loadManifest:(NSURL *)url {
     if (self.busy || self.buildRunning) { self.message=@"请等待当前安装或构建结束"; [self publish]; return NO; }
     if (!url.host.length || ![@[@"https",@"http"] containsObject:url.scheme.lowercaseString]) {
@@ -58,45 +81,47 @@ static NSError *PackageError(NSString *message) {
         NSError *error = failure;
         NSInteger statusCode = [(NSHTTPURLResponse *)response statusCode];
         if (!error && statusCode != 200) error = PackageError([NSString stringWithFormat:@"清单返回 HTTP %ld",(long)statusCode]);
-        id manifest = data ? [NSJSONSerialization JSONObjectWithData:data options:0 error:&error] : nil;
+        id manifest = error ? nil : [NSJSONSerialization JSONObjectWithData:data options:0 error:&error];
         NSArray *entries = [manifest isKindOfClass:NSDictionary.class] ? manifest[@"packages"] : nil;
-        NSMutableArray *resolved = [NSMutableArray array];
-        NSMutableSet *identifiers = [NSMutableSet set];
+        NSMutableDictionary<NSString *, NSDictionary *> *overrides = [NSMutableDictionary dictionary];
         if (!error && (![entries isKindOfClass:NSArray.class] || !entries.count)) error = PackageError(@"清单需要 packages 数组");
         if (!error) for (id entry in entries) {
             if (![entry isKindOfClass:NSDictionary.class] ||
                 ![@[@"support",@"sdk16",@"sdk26"] containsObject:entry[@"id"]] ||
-                [identifiers containsObject:entry[@"id"]] ||
+                overrides[entry[@"id"]] ||
                 ![entry[@"sha256"] isKindOfClass:NSString.class] ||
                 [entry[@"sha256"] rangeOfString:@"^[0-9a-f]{64}$" options:NSRegularExpressionSearch].location == NSNotFound ||
                 ![entry[@"url"] isKindOfClass:NSString.class] ||
-                ![entry[@"title"] isKindOfClass:NSString.class]) {
+                ![entry[@"title"] isKindOfClass:NSString.class] ||
+                (entry[@"bytes"] && ![entry[@"bytes"] isKindOfClass:NSNumber.class])) {
                 error = PackageError(@"资源清单条目无效");
                 break;
             }
             NSURL *download = [NSURL URLWithString:entry[@"url"] relativeToURL:url].absoluteURL;
-            if (![@[@"https", @"http"] containsObject:download.scheme.lowercaseString]) {
+            if (!download.host.length || ![@[@"https", @"http"] containsObject:download.scheme.lowercaseString]) {
                 error = PackageError(@"资源地址需要 HTTP 或 HTTPS");
                 break;
             }
-            NSMutableDictionary *item = [entry mutableCopy];
-            item[@"url"] = download.absoluteString;
-            [resolved addObject:item];
-            [identifiers addObject:entry[@"id"]];
+            NSMutableDictionary *item = [@{@"id":entry[@"id"], @"title":entry[@"title"],
+                @"url":download.absoluteString, @"sha256":entry[@"sha256"]} mutableCopy];
+            if (entry[@"bytes"]) item[@"bytes"] = entry[@"bytes"];
+            overrides[entry[@"id"]] = item;
         }
         if (!error) {
             NSFileManager *files = NSFileManager.defaultManager;
             NSString *directory = PBPackagesDirectory();
             if (![files createDirectoryAtPath:directory withIntermediateDirectories:YES attributes:nil error:&error] ||
-                ![resolved writeToFile:[directory stringByAppendingPathComponent:@"catalog.plist"] atomically:YES]) {
+                ![overrides writeToFile:[directory stringByAppendingPathComponent:@"source-overrides.plist"] atomically:YES]) {
                 if (!error) error = PackageError(@"清单保存失败");
             } else {
-                self.catalog = resolved;
+                [self applySourceOverrides:overrides];
+                [NSUserDefaults.standardUserDefaults setObject:url.absoluteString forKey:@"PackageManifestURL"];
+                [NSUserDefaults.standardUserDefaults setBool:YES forKey:@"UseCustomPackageSource"];
             }
         }
         self.busy = NO;
         self.task = nil;
-        self.message = error ? error.localizedDescription : @"资源清单已更新";
+        self.message = error ? error.localizedDescription : @"备用下载源已启用";
         [self publish];
     }];
     [self.task resume];
@@ -115,7 +140,7 @@ static NSError *PackageError(NSString *message) {
     self.installing = nil;
     for (NSDictionary *item in self.catalog) if ([item[@"id"] isEqual:identifier]) self.installing = item;
     if (![self.installing[@"id"] isEqual:identifier]) {
-        self.message = @"请先加载包含该组件的资源清单";
+        self.message = @"找不到这个组件";
         [self publish];
         return;
     }
