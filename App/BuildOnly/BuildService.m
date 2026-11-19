@@ -154,6 +154,7 @@ static NSDictionary *Failure(NSInteger status, NSString *message) {
     if ([action isEqual:@"device"]) {
         return DXRemoteResponse(200, @{@"name":@"PocketBuild",
             @"version":[NSBundle.mainBundle objectForInfoDictionaryKey:@"CFBundleShortVersionString"] ?: @"0.1.0",
+            @"build":[NSBundle.mainBundle objectForInfoDictionaryKey:@"CFBundleVersion"],
             @"systemVersion":UIDevice.currentDevice.systemVersion,
             @"capabilities":@[@"tweak", @"app-uikit", @"chunked-upload", @"build-jobs"],
             @"tools":PBToolchains.shared.status});

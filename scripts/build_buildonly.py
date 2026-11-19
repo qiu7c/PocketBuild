@@ -12,7 +12,7 @@ import zipfile
 
 ROOT = Path(__file__).resolve().parents[1]
 VERSION = "0.1.0"
-BUILD_NUMBER = "4"
+BUILD_NUMBER = "5"
 
 
 def compiler_source() -> str:
@@ -51,6 +51,8 @@ def compiler_source() -> str:
     )
     # Keep the upstream compile loop; change the product-specific link and package steps.
     hooks = {
+        'NSString *projectDirectory=self.importedProject?:source.stringByDeletingLastPathComponent;':
+            'NSString *projectDirectory=(self.importedProject?:source.stringByDeletingLastPathComponent).stringByStandardizingPath;',
         'NSError *namingError=nil;NSString *dylibName=':
             'BOOL isApp=[config[@"productType"] isEqual:@"app"]; NSError *namingError=nil;'
             'NSDictionary *appPlan=isApp?PBPrepareAppPlan(projectDirectory,config,&namingError):nil;NSString *dylibName=',
