@@ -74,8 +74,8 @@ class PocketBuildPackagingTests(unittest.TestCase):
                 self.assertEqual(info["CFBundleIdentifier"], "com.qiu7c.pocketbuild")
                 self.assertEqual(info["CFBundleIcons"]["CFBundlePrimaryIcon"]["CFBundleIconName"], "AppIcon")
                 self.assertEqual(plistlib.loads(archive.read("Payload/PocketBuild.app/commandDictionary.plist")), {})
-                commands = plistlib.loads(archive.read("Payload/PocketBuild.app/extraCommandsDictionary.plist"))
-                self.assertEqual(set(commands), {"clang", "ld64.lld"})
+                bootstrap_commands = plistlib.loads(archive.read("Payload/PocketBuild.app/extraCommandsDictionary.plist"))
+                self.assertEqual(set(bootstrap_commands), {"clang", "ld64.lld"})
             manifest = json.loads((output / "packages/PocketBuild-packages.json").read_text(encoding="utf-8"))
             self.assertEqual({item["id"] for item in manifest["packages"]}, {"support","sdk16","sdk26"})
             for item in manifest["packages"]:
