@@ -12,6 +12,7 @@ import zipfile
 
 ROOT = Path(__file__).resolve().parents[1]
 VERSION = "0.1.0"
+BUILD_NUMBER = "2"
 
 
 def compiler_source() -> str:
@@ -149,7 +150,7 @@ def main() -> None:
     module_info = {
         "CFBundleExecutable":"PBCompiler", "CFBundleIdentifier":"com.qiu7c.pocketbuild.compiler",
         "CFBundleName":"PBCompiler", "CFBundlePackageType":"FMWK",
-        "CFBundleShortVersionString":VERSION, "CFBundleVersion":"1", "MinimumOSVersion":"15.0",
+        "CFBundleShortVersionString":VERSION, "CFBundleVersion":BUILD_NUMBER, "MinimumOSVersion":"15.0",
     }
     (module / "Info.plist").write_bytes(plistlib.dumps(module_info))
     compiler_sources = [
@@ -225,7 +226,7 @@ def main() -> None:
     info = {
         "CFBundleExecutable":"PocketBuild", "CFBundleIdentifier":"com.qiu7c.pocketbuild",
         "CFBundleName":"PocketBuild", "CFBundleDisplayName":"PocketBuild", "CFBundlePackageType":"APPL",
-        "CFBundleShortVersionString":VERSION, "CFBundleVersion":"1", "MinimumOSVersion":"15.0",
+        "CFBundleShortVersionString":VERSION, "CFBundleVersion":BUILD_NUMBER, "MinimumOSVersion":"15.0",
         "CFBundleSupportedPlatforms":["iPhoneSimulator" if args.simulator else "iPhoneOS"],
         "UIDeviceFamily":[1,2], "UILaunchScreen":{}, "UIFileSharingEnabled":True,
         "LSSupportsOpeningDocumentsInPlace":True, "NSAppTransportSecurity":{"NSAllowsLocalNetworking":True},
