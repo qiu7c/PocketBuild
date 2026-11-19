@@ -12,7 +12,7 @@ import zipfile
 
 ROOT = Path(__file__).resolve().parents[1]
 VERSION = "0.1.0"
-BUILD_NUMBER = "5"
+BUILD_NUMBER = "6"
 
 
 def compiler_source() -> str:
@@ -49,6 +49,11 @@ def compiler_source() -> str:
         'TMCLog(log, "loading %s: %s\\n", name.UTF8String, path.UTF8String);\n'
         '    void *handle = dlopen(path.fileSystemRepresentation, RTLD_NOW | RTLD_GLOBAL);',
     )
+    # runToolOutput captures Logos stdout as source; diagnostics belong on stderr.
+    source = source.replace('TMCLog(log, "loading %s: %s\\n", name.UTF8String, path.UTF8String);',
+                            'TMCLog(errors, "loading %s: %s\\n", name.UTF8String, path.UTF8String);', 1)
+    source = source.replace('if (!handle) { TMCLog(log, "%s\\n", dlerror()); return 127; }',
+                            'if (!handle) { TMCLog(errors, "%s\\n", dlerror()); return 127; }')
     # Keep the upstream compile loop; change the product-specific link and package steps.
     hooks = {
         'NSString *projectDirectory=self.importedProject?:source.stringByDeletingLastPathComponent;':
