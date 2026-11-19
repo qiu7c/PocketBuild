@@ -20,10 +20,15 @@ static NSError *PackageError(NSString *message) {
 @property NSURLSession *session;
 @property NSURLSessionTask *task;
 @property NSDictionary *installing;
+@property NSArray<NSString *> *pendingPackages;
 @property NSProgress *extraction;
 @end
 
 @implementation PBToolchains
++ (NSArray<NSString *> *)requiredPackagesForSDK:(NSString *)sdk usesCXX:(BOOL)usesCXX {
+    if (![sdk isEqualToString:@"26.0"]) return @[@"support", @"sdk16"];
+    return usesCXX ? @[@"support", @"sdk16", @"sdk26"] : @[@"support", @"sdk26"];
+}
 + (instancetype)shared {
     static PBToolchains *store;
     static dispatch_once_t once;
@@ -140,6 +145,7 @@ static NSError *PackageError(NSString *message) {
     self.installing = nil;
     for (NSDictionary *item in self.catalog) if ([item[@"id"] isEqual:identifier]) self.installing = item;
     if (![self.installing[@"id"] isEqual:identifier]) {
+        self.pendingPackages = nil;
         self.message = @"找不到这个组件";
         [self publish];
         return;
@@ -152,7 +158,13 @@ static NSError *PackageError(NSString *message) {
     [self.task resume];
     [self publish];
 }
+- (void)installPackages:(NSArray<NSString *> *)identifiers {
+    if (self.busy || self.buildRunning || !identifiers.count) return;
+    self.pendingPackages = [identifiers subarrayWithRange:NSMakeRange(1, identifiers.count - 1)];
+    [self install:identifiers.firstObject];
+}
 - (void)cancel {
+    self.pendingPackages = nil;
     [self.task cancel];
     [self.extraction cancel];
 }
@@ -169,6 +181,7 @@ static NSError *PackageError(NSString *message) {
     if (status != 200) error = PackageError([NSString stringWithFormat:@"下载返回 HTTP %ld",(long)status]);
     if (!error) [NSFileManager.defaultManager moveItemAtURL:location toURL:[NSURL fileURLWithPath:archive] error:&error];
     if (error) {
+        self.pendingPackages = nil;
         self.busy = NO;
         self.message = error.localizedDescription;
         self.task = nil;
@@ -234,6 +247,12 @@ static NSError *PackageError(NSString *message) {
             }
             self.busy = NO;
             self.extraction = nil;
+            if (!failure && self.pendingPackages.count) {
+                NSArray<NSString *> *remaining = self.pendingPackages;
+                [self installPackages:remaining];
+                return;
+            }
+            self.pendingPackages = nil;
             self.message = failure ? failure.localizedDescription : [item[@"title"] stringByAppendingString:@"已安装"];
             [self publish];
         });
@@ -241,6 +260,7 @@ static NSError *PackageError(NSString *message) {
 }
 - (void)URLSession:(NSURLSession *)session task:(NSURLSessionTask *)task didCompleteWithError:(NSError *)error {
     if (!error || task != self.task) return;
+    self.pendingPackages = nil;
     self.task = nil;
     self.busy = NO;
     self.message = error.localizedDescription;

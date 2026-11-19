@@ -4,6 +4,7 @@ FOUNDATION_EXPORT NSNotificationName const PBPackagesChanged;
 
 @interface PBToolchains : NSObject <NSURLSessionDownloadDelegate>
 + (instancetype)shared;
++ (NSArray<NSString *> *)requiredPackagesForSDK:(NSString *)sdk usesCXX:(BOOL)usesCXX;
 @property (nonatomic, readonly) NSArray<NSDictionary *> *catalog;
 @property (nonatomic, readonly) BOOL busy;
 @property (nonatomic) BOOL buildRunning;
@@ -13,6 +14,7 @@ FOUNDATION_EXPORT NSNotificationName const PBPackagesChanged;
 - (void)useDefaultSource;
 @property (nonatomic, readonly) BOOL usingCustomSource;
 - (void)install:(NSString *)identifier;
+- (void)installPackages:(NSArray<NSString *> *)identifiers;
 - (void)cancel;
 - (BOOL)remove:(NSString *)identifier error:(NSError **)error;
 - (NSDictionary *)status;

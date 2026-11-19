@@ -12,7 +12,7 @@ import zipfile
 
 ROOT = Path(__file__).resolve().parents[1]
 VERSION = "0.1.0"
-BUILD_NUMBER = "8"
+BUILD_NUMBER = "9"
 
 
 def compiler_source() -> str:
@@ -56,6 +56,10 @@ def compiler_source() -> str:
                             'if (!handle) { TMCLog(errors, "%s\\n", dlerror()); return 127; }')
     # Keep the upstream compile loop; change the product-specific link and package steps.
     hooks = {
+        'self.lastBuild = [documents stringByAppendingPathComponent:[@"Build-" stringByAppendingString:NSUUID.UUID.UUIDString]];':
+            'self.lastBuild = self.trialWorkspace ? [self.trialWorkspace stringByAppendingPathComponent:@"output"] : '
+            '[documents stringByAppendingPathComponent:[@"Build-" stringByAppendingString:NSUUID.UUID.UUIDString]];',
+        'TMCDocumentPublishBuild(documents,build,nil);': 'if (!self.trialWorkspace) TMCDocumentPublishBuild(documents,build,nil);',
         'NSString *projectDirectory=self.importedProject?:source.stringByDeletingLastPathComponent;':
             'NSString *projectDirectory=(self.importedProject?:source.stringByDeletingLastPathComponent).stringByStandardizingPath;',
         'NSError *namingError=nil;NSString *dylibName=':

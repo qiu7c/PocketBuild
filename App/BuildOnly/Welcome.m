@@ -68,7 +68,7 @@
     } else if(self.page==2) {
         [self.content addArrangedSubview:PBLabel(@"按需准备，\n轻装开始。",32,UIFontWeightBold,UIColor.labelColor)];
         UIStackView *card=PBCard();[card addArrangedSubview:PBFeature(@"checkmark.seal",@"编译器已随 App 就位",@"Clang、LLVM、LLD 与 Perl 已包含在安装包中。")];
-        [card addArrangedSubview:PBFeature(@"shippingbox",@"构建资源 + SDK",@"先安装构建资源与 iOS 16.4 SDK。需要新系统头文件时，再选择其他 SDK。")];[self.content addArrangedSubview:card];
+        [card addArrangedSubview:PBFeature(@"shippingbox",@"构建资源 + SDK",@"构建资源必装，SDK 按工程选择。组件库会列出缺少的组件，安装完就能试编译。")];[self.content addArrangedSubview:card];
         UIButton *library = PBButton(@"打开组件库", @"arrow.down.circle", NO);
         [library addTarget:self action:@selector(openTools) forControlEvents:UIControlEventTouchUpInside];
         [self.content addArrangedSubview:library];

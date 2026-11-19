@@ -37,7 +37,17 @@ App 构建包含源文件编译、MH_EXECUTE 可执行文件链接、ad-hoc 签�
 
 ## 按需安装 SDK 和头文件
 
-打开「管理组件 → 组件库」，可直接安装「构建资源」「iOS 16.4 SDK」和「iOS 26.0 SDK」。首次构建推荐前两项，需要新系统头文件时再装 iOS 26.0 SDK。iOS 26 SDK 配合 Clang 14 编译 C++ 时，还需要 iOS 16.4 SDK 提供兼容的标准库头文件。下载完成后会校验 SHA-256，再解压安装。默认下载包托管在 [PocketBuild 下载源](https://github.com/qiu7c/PocketBuild/releases/tag/resources-v1)。
+打开「组件与试编译」，按工程用途选择组件。组件库会标出必装项、下载大小和安装状态，并提供一次安装缺少组件的按钮。
+
+| 工程用途 | 必装组件 |
+| --- | --- |
+| 常规构建，使用 iOS 16.4 SDK | 构建资源、iOS 16.4 SDK |
+| 工程选择 iOS 26.0 SDK，使用 C、Objective-C 或 Logos `.x` | 构建资源、iOS 26.0 SDK |
+| 工程选择 iOS 26.0 SDK，并包含 C++、Objective-C++ 或 Logos `.xm` | 构建资源、iOS 26.0 SDK、iOS 16.4 SDK（兼容 C++ 头文件） |
+
+安装齐全后，可点「试编译 UIKit 示例」在手机本机编译、链接并打包示例 IPA。选择「26 + C++」会额外编译 C++ 标准库示例。试编译结束、失败或取消后清理临时工程、缓存、日志和产物，界面仅显示本次结果。App 异常退出留下的试编译目录会在下次启动时清理。
+
+下载完成后会校验 SHA-256，再解压安装。默认下载包托管在 [PocketBuild 下载源](https://github.com/qiu7c/PocketBuild/releases/tag/resources-v1)。
 
 若要使用局域网镜像，解压 PocketBuild-resources 云编译产物，用 PowerShell 启动 HTTP 服务。请把 IP 和目录改为实际值。
 

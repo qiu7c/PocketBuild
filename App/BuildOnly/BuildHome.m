@@ -63,7 +63,7 @@
     self.jobTitle=PBLabel(@"等待第一份作品",16,UIFontWeightSemibold,UIColor.labelColor);self.jobDetail=PBLabel(@"连接电脑后，上传工程并开始构建。",13,UIFontWeightRegular,UIColor.secondaryLabelColor);
     self.jobProgress=[UIProgressView new];self.jobProgress.progressTintColor=PBAccent();[job addArrangedSubview:self.jobTitle];[job addArrangedSubview:self.jobProgress];[job addArrangedSubview:self.jobDetail];[content addArrangedSubview:job];
     UIStackView *prepare=PBCard();[prepare addArrangedSubview:PBLabel(@"构建前准备",18,UIFontWeightBold,UIColor.labelColor)];self.readiness=PBLabel(@"",14,UIFontWeightRegular,UIColor.secondaryLabelColor);[prepare addArrangedSubview:self.readiness];
-    UIButton *tools=PBButton(@"管理组件",@"shippingbox",NO);[tools addTarget:self action:@selector(openTools) forControlEvents:UIControlEventTouchUpInside];[prepare addArrangedSubview:tools];
+    UIButton *tools=PBButton(@"组件与试编译",@"shippingbox",NO);[tools addTarget:self action:@selector(openTools) forControlEvents:UIControlEventTouchUpInside];[prepare addArrangedSubview:tools];
     UIButton *guide=PBButton(@"连接指南与首次配置",@"book.closed",NO);[guide addTarget:self action:@selector(guide) forControlEvents:UIControlEventTouchUpInside];[prepare addArrangedSubview:guide];[content addArrangedSubview:prepare];
     NSString *build=[NSBundle.mainBundle objectForInfoDictionaryKey:@"CFBundleVersion"];
     [content addArrangedSubview:PBLabel([NSString stringWithFormat:@"PocketBuild  %@ · Build %@\n编译期间请保持 App 在前台。",[NSBundle.mainBundle objectForInfoDictionaryKey:@"CFBundleShortVersionString"],build],12,UIFontWeightRegular,UIColor.tertiaryLabelColor)];
@@ -127,8 +127,11 @@
     self.jobTitle.text=state?(@{@"running":@"正在构建",@"succeeded":@"构建成功",@"failed":@"构建失败",@"cancelled":@"构建已取消"}[state]?:state):@"等待第一份作品";
     self.jobProgress.hidden=![state isEqual:@"running"];self.jobProgress.progress=[job[@"progress"] floatValue];
     self.jobDetail.text=[state isEqual:@"running"]?(job[@"stage"]?:@"准备编译器…"):[state isEqual:@"succeeded"]?[NSString stringWithFormat:@"%lu 个产物已就位，在电脑下载。",(unsigned long)[job[@"artifacts"] count]]:state?@"在电脑查看构建日志与报告。":@"连接电脑后，上传工程并开始构建。";
-    BOOL support=installed[@"support"]!=nil,sdk=installed[@"sdk16"]||installed[@"sdk26"];
-    self.readiness.text=support&&sdk?@"编译器与构建组件已就位，可以开始构建。":!support?@"编译器已内置，请安装构建资源和需要的 SDK。":@"构建资源已安装，再选择一套 SDK 即可。";
+    if (!installed[@"support"]) self.readiness.text = @"构建资源必装。再按工程用途选择 SDK。";
+    else if (installed[@"sdk16"] && installed[@"sdk26"]) self.readiness.text = @"两套 SDK 已就绪，可开始构建或试编译。";
+    else if (installed[@"sdk16"]) self.readiness.text = @"常规构建已就绪，可试编译示例。";
+    else if (installed[@"sdk26"]) self.readiness.text = @"iOS 26 SDK 已就绪。编译 C++ 或使用常规 SDK 时需安装 16.4 SDK。";
+    else self.readiness.text = @"构建资源已安装，请按工程用途选择 SDK。";
 }
 @end
 UIViewController *DXBuildHome(void) { UIViewController *c=[DXBuildHomeController new];c.navigationItem.backButtonDisplayMode=UINavigationItemBackButtonDisplayModeMinimal;return c; }

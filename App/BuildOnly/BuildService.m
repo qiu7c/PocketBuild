@@ -12,6 +12,8 @@
 #import <stdio.h>
 #import <Security/Security.h>
 
+NSNotificationName const PBTrialChanged = @"PocketBuild.TrialChanged";
+
 @interface DXBuildService ()
 @property (nonatomic) DXRemoteHTTP *http;
 @property (nonatomic) CompilerController *compiler;
@@ -22,6 +24,10 @@
 @property (nonatomic) BOOL activeCodeIsFixed;
 @property (nonatomic) NSDate *startedAt, *lastRequestAt;
 @property (nonatomic) NSUInteger requestCount;
+@property (nonatomic) BOOL trialRunning;
+@property (nonatomic) double trialProgress;
+@property (nonatomic) NSString *trialMessage;
+@property (nonatomic) NSString *trialWorkspace;
 @end
 
 @implementation DXBuildService
@@ -68,6 +74,135 @@
 }
 - (NSDictionary *)latestJob { return self.job ?: @{}; }
 
+- (BOOL)prepareCompiler:(NSError **)error {
+    if (self.compiler) return YES;
+    if (![PBToolchains.shared loadCompiler:error]) return NO;
+    Class controller = NSClassFromString(@"CompilerController");
+    self.compiler = [controller new];
+    [self.compiler loadViewIfNeeded];
+    return YES;
+}
+
+- (BOOL)runTrialWithSDK:(NSString *)sdk usesCXX:(BOOL)usesCXX error:(NSError **)error {
+    PBToolchains *store = PBToolchains.shared;
+    NSString *reason = nil;
+    if (store.buildRunning || store.busy) {
+        reason = @"请等当前构建或组件安装结束。";
+    } else {
+        for (NSString *identifier in [PBToolchains requiredPackagesForSDK:sdk usesCXX:usesCXX]) {
+            if (!PBInstalledPackage(identifier)) {
+                reason = @"请先安装此用途缺少的组件。";
+                break;
+            }
+        }
+    }
+    if (reason) {
+        if (error) *error = [NSError errorWithDomain:@"PocketBuild.Trial" code:1
+            userInfo:@{NSLocalizedDescriptionKey:reason}];
+        return NO;
+    }
+    if (![self prepareCompiler:error]) return NO;
+
+    NSFileManager *files = NSFileManager.defaultManager;
+    NSString *workspace = self.trialWorkspace;
+    NSString *project = [workspace stringByAppendingPathComponent:@"project"];
+    NSString *template = [NSBundle.mainBundle pathForResource:@"AppTemplate" ofType:nil];
+    if ([files fileExistsAtPath:workspace] && ![files removeItemAtPath:workspace error:error]) return NO;
+    if (![files createDirectoryAtPath:workspace withIntermediateDirectories:YES attributes:nil error:error]) return NO;
+    if (![files copyItemAtPath:template toPath:project error:error]) {
+        [files removeItemAtPath:workspace error:nil];
+        return NO;
+    }
+
+    NSString *manifestPath = [project stringByAppendingPathComponent:@"MobileCompiler.json"];
+    NSData *templateConfig = [NSData dataWithContentsOfFile:manifestPath options:0 error:error];
+    NSMutableDictionary *config = templateConfig ?
+        [NSJSONSerialization JSONObjectWithData:templateConfig options:NSJSONReadingMutableContainers error:error] : nil;
+    if (!config) {
+        [files removeItemAtPath:workspace error:nil];
+        return NO;
+    }
+    config[@"sdkVersion"] = sdk;
+    if (usesCXX) {
+        NSString *source = @"#include <vector>\nint pocketbuild_trial_cpp() { return std::vector<int>{1, 2, 3}.size(); }\n";
+        if (![source writeToFile:[project stringByAppendingPathComponent:@"trial.cpp"] atomically:YES
+            encoding:NSUTF8StringEncoding error:error]) {
+            [files removeItemAtPath:workspace error:nil];
+            return NO;
+        }
+        config[@"sources"] = @[@"main.m", @"trial.cpp"];
+    }
+    NSData *configured = [NSJSONSerialization dataWithJSONObject:config options:0 error:error];
+    if (![configured writeToFile:manifestPath options:NSDataWritingAtomic error:error]) {
+        [files removeItemAtPath:workspace error:nil];
+        return NO;
+    }
+
+    self.compiler.importedProject = project;
+    self.compiler.importedSource = nil;
+    self.compiler.trialWorkspace = workspace;
+    self.compiler.checkpointCacheDirectory = [workspace stringByAppendingPathComponent:@"checkpoints"];
+    self.trialRunning = YES;
+    self.trialProgress = 0;
+    self.trialMessage = [NSString stringWithFormat:@"正在使用 iOS %@ SDK 试编译 UIKit 示例…", sdk];
+    store.buildRunning = YES;
+    TFScreenAwakeSet(@"trial-build", YES);
+
+    __weak typeof(self) weak = self;
+    self.compiler.buildProgress = ^(NSString *stage, double progress) {
+        if (!weak.compiler.cancelRequested) weak.trialMessage = stage;
+        weak.trialProgress = progress;
+        [NSNotificationCenter.defaultCenter postNotificationName:PBTrialChanged object:weak];
+    };
+    self.compiler.buildCompletion = ^(BOOL success) {
+        DXBuildService *service = weak;
+        CompilerController *compiler = service.compiler;
+        if (compiler.cancelRequested) {
+            service.trialMessage = @"试编译已取消。";
+        } else if (success) {
+            service.trialMessage = [NSString stringWithFormat:@"试编译通过。iOS %@ SDK 已完成编译、链接和 IPA 打包。", sdk];
+        } else {
+            NSString *path = [compiler.lastBuild stringByAppendingPathComponent:@"build.log"];
+            NSString *log = [NSString stringWithContentsOfFile:path encoding:NSUTF8StringEncoding error:nil];
+            NSMutableArray<NSString *> *errors = [NSMutableArray array];
+            for (NSString *line in [log componentsSeparatedByCharactersInSet:NSCharacterSet.newlineCharacterSet]) {
+                if ([line containsString:@"error:"]) [errors addObject:[line stringByReplacingOccurrencesOfString:workspace withString:@"试编译"]];
+                if (errors.count == 3) break;
+            }
+            NSString *detail = errors.count ? [errors componentsJoinedByString:@"\n"] : compiler.console.text;
+            NSData *reportData = [NSData dataWithContentsOfFile:[compiler.lastBuild stringByAppendingPathComponent:@"report.json"]];
+            NSDictionary *report = reportData ? [NSJSONSerialization JSONObjectWithData:reportData options:0 error:nil] : nil;
+            service.trialMessage = [NSString stringWithFormat:@"试编译失败。\n%@", report[@"packageError"] ?: detail];
+        }
+        [files changeCurrentDirectoryPath:NSHomeDirectory()];
+        NSError *cleanupError = nil;
+        if ([files removeItemAtPath:workspace error:&cleanupError]) {
+            service.trialMessage = [service.trialMessage stringByAppendingString:@"\n临时工程、缓存和产物已清理。"];
+        } else {
+            service.trialMessage = [service.trialMessage stringByAppendingFormat:@"\n清理失败：%@", cleanupError.localizedDescription];
+        }
+        compiler.trialWorkspace = nil;
+        compiler.checkpointCacheDirectory = nil;
+        compiler.lastBuild = nil;
+        compiler.lastPackage = nil;
+        compiler.importedProject = nil;
+        compiler.buildProgress = nil;
+        compiler.buildCompletion = nil;
+        service.trialRunning = NO;
+        TFScreenAwakeSet(@"trial-build", NO);
+        store.buildRunning = NO;
+    };
+    [self.compiler runProof];
+    return YES;
+}
+
+- (void)cancelTrial {
+    if (!self.trialRunning) return;
+    self.compiler.cancelRequested = YES;
+    self.trialMessage = @"正在取消，等待当前编译步骤结束…";
+    [NSNotificationCenter.defaultCenter postNotificationName:PBTrialChanged object:self];
+}
+
 + (instancetype)shared {
     static DXBuildService *service;
     static dispatch_once_t once;
@@ -103,6 +238,8 @@
         _state = @"已停止";
         _uploads = [NSMutableDictionary dictionary];
         _jobs = [NSMutableDictionary dictionary];
+        _trialWorkspace = [NSTemporaryDirectory() stringByAppendingPathComponent:@"PocketBuild-Trial"].stringByStandardizingPath;
+        [NSFileManager.defaultManager removeItemAtPath:_trialWorkspace error:nil];
         NSString *documents = NSSearchPathForDirectoriesInDomains(NSDocumentDirectory, NSUserDomainMask, YES).firstObject;
         _projects = [documents stringByAppendingPathComponent:@"Projects"];
         [NSFileManager.defaultManager createDirectoryAtPath:_projects withIntermediateDirectories:YES attributes:nil error:nil];
@@ -325,27 +462,35 @@ static NSDictionary *Failure(NSInteger status, NSString *message) {
         return DXRemoteResponse(200, @{@"files": [list sortedArrayUsingSelector:@selector(compare:)]});
     }
     if ([action isEqual:@"build"]) {
-        if ([self.job[@"state"] isEqual:@"running"]) return Failure(409, @"当前构建尚未结束");
+        if (PBToolchains.shared.buildRunning) return Failure(409, @"当前构建尚未结束");
         if (PBToolchains.shared.busy) return Failure(409, @"工具链正在安装，请稍后再构建");
-        if (![PBToolchains.shared loadCompiler:&error]) return Failure(409, error.localizedDescription);
-        if (!PBInstalledPackage(@"support")) return Failure(409, @"请在手机工具链管理中安装构建资源");
-        if (!self.compiler) {
-            Class controller = NSClassFromString(@"CompilerController");
-            self.compiler = [controller new];
-            [self.compiler loadViewIfNeeded];
-        }
         NSString *manifest = [root stringByAppendingPathComponent:@"MobileCompiler.json"];
         if (![files fileExistsAtPath:manifest]) {
             for (NSString *file in [files enumeratorAtPath:root]) {
                 if ([@[@"xcodeproj", @"xcworkspace", @"swift"] containsObject:file.pathExtension.lowercaseString]) return Failure(400, @"此工程需要先配置 MobileCompiler.json。手机当前支持 Objective-C/C/C++ 和代码创建的 UIKit App；Swift 和完整 Xcode 工程构建尚未接入");
             }
         }
-        if (!TMCPrepareImportedProject(root, @"Plugin", &error)) return Failure(400, error.localizedDescription);
+        NSDictionary *prepared = TMCPrepareImportedProject(root, @"Plugin", &error);
+        if (!prepared) return Failure(400, error.localizedDescription);
         NSDictionary *configuration = [NSJSONSerialization JSONObjectWithData:[NSData dataWithContentsOfFile:manifest] options:0 error:nil];
         if (configuration[@"productType"] && ![@[@"app", @"tweak"] containsObject:configuration[@"productType"]]) return Failure(400, @"productType 应为 tweak 或 app");
         NSString *sdk = configuration[@"sdkVersion"] ?: @"16.4";
-        NSString *sdkID = [sdk isEqual:@"26.0"] ? @"sdk26" : @"sdk16";
-        if (!PBInstalledPackage(sdkID)) return Failure(409, [NSString stringWithFormat:@"请先安装 iOS %@ SDK", sdk]);
+        BOOL usesCXX = NO;
+        if ([sdk isEqual:@"26.0"]) {
+            for (NSString *source in prepared[@"sources"]) {
+                if ([@[@"cpp", @"mm", @"xm"] containsObject:source.pathExtension.lowercaseString]) {
+                    usesCXX = YES;
+                    break;
+                }
+            }
+        }
+        NSMutableArray<NSString *> *missing = [NSMutableArray array];
+        NSDictionary *titles = @{@"support":@"构建资源", @"sdk16":@"iOS 16.4 SDK", @"sdk26":@"iOS 26.0 SDK"};
+        for (NSString *required in [PBToolchains requiredPackagesForSDK:sdk usesCXX:usesCXX]) {
+            if (!PBInstalledPackage(required)) [missing addObject:titles[required]];
+        }
+        if (missing.count) return Failure(409, [NSString stringWithFormat:@"请在手机组件库安装：%@。", [missing componentsJoinedByString:@"、"]]);
+        if (![self prepareCompiler:&error]) return Failure(409, error.localizedDescription);
         NSString *copy = [NSTemporaryDirectory() stringByAppendingPathComponent:NSUUID.UUID.UUIDString];
         if (![files copyItemAtPath:root toPath:copy error:&error]) return Failure(500, error.localizedDescription);
         PBToolchains.shared.buildRunning = YES;
