@@ -252,6 +252,7 @@ def main() -> None:
     info = {
         "CFBundleExecutable":"PocketBuild", "CFBundleIdentifier":"com.qiu7c.pocketbuild",
         "CFBundleName":"PocketBuild", "CFBundleDisplayName":"PocketBuild", "CFBundlePackageType":"APPL",
+        "CFBundleDevelopmentRegion":"zh_CN", "CFBundleLocalizations":["zh-Hans"],
         "CFBundleShortVersionString":VERSION, "CFBundleVersion":BUILD_NUMBER, "MinimumOSVersion":"15.0",
         "CFBundleSupportedPlatforms":["iPhoneSimulator" if args.simulator else "iPhoneOS"],
         "UIDeviceFamily":[1,2], "UILaunchScreen":{}, "UIFileSharingEnabled":True,

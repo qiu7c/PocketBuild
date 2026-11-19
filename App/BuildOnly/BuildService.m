@@ -50,7 +50,7 @@
 - (BOOL)saveFixedCode:(NSString *)code error:(NSError **)error {
     if (!code.length) code = [DXBuildService newConnectionCode:error];
     if (!code) return NO;
-    if ([code rangeOfString:@"^[A-Za-z0-9_-]{8,64}$" options:NSRegularExpressionSearch].location == NSNotFound) {
+    if ([code rangeOfString:@"\\A[A-Za-z0-9_-]{8,64}\\z" options:NSRegularExpressionSearch].location == NSNotFound) {
         if (error) *error = [NSError errorWithDomain:@"PocketBuild.Pairing" code:1 userInfo:@{NSLocalizedDescriptionKey:@"连接码使用 8–64 位字母、数字、下划线或短横线。"}];
         return NO;
     }

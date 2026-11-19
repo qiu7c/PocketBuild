@@ -43,6 +43,7 @@ jobs:
           if-no-files-found: error
   interface:
     runs-on: macos-15-intel
+    timeout-minutes: 15
     env:
       DEVELOPER_DIR: /Applications/Xcode_16.4.app/Contents/Developer
     steps:

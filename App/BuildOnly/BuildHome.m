@@ -15,7 +15,7 @@
 @end
 @implementation DXBuildHomeController
 - (void)viewDidLoad {
-    [super viewDidLoad];self.title=@"PocketBuild";self.navigationItem.backButtonDisplayMode=UINavigationItemBackButtonDisplayModeMinimal;
+    [super viewDidLoad];self.title=@"PocketBuild";
     self.navigationItem.rightBarButtonItem=[[UIBarButtonItem alloc] initWithImage:[UIImage systemImageNamed:@"slider.horizontal.3"] style:UIBarButtonItemStylePlain target:self action:@selector(settings)];
     self.navigationItem.rightBarButtonItem.accessibilityLabel=@"连接设置";
     UIStackView *content=PBPageContent(self.view,self.view.bottomAnchor);
@@ -99,9 +99,13 @@
 }
 - (void)update {
     DXBuildService *s=DXBuildService.shared;BOOL active=s.origin.length>0,running=[s.state isEqual:@"运行中"];
-    self.statusBadge.text=running?@"局域网服务 · 运行中":active?@"正在启动":@"局域网服务 · 未开启";
+    BOOL failed=!active&&![s.state isEqual:@"已停止"];
+    self.statusBadge.text=running?@"局域网服务 · 运行中":active?@"正在启动":failed?@"局域网服务 · 启动失败":@"局域网服务 · 未开启";
     self.statusDot.backgroundColor=running?PBAccent():[UIColor.whiteColor colorWithAlphaComponent:.3];
-    self.heroTitle.text=running?@"服务已就绪":active?@"正在建立连接":[s.state isEqual:@"已停止"]?@"准备好开始了吗":@"服务需要处理";
+    if(running&&!UIAccessibilityIsReduceMotionEnabled()) {
+        if(![self.statusDot.layer animationForKey:@"servicePulse"]){CABasicAnimation *pulse=[CABasicAnimation animationWithKeyPath:@"opacity"];pulse.fromValue=@1;pulse.toValue=@.35;pulse.duration=1.2;pulse.autoreverses=YES;pulse.repeatCount=HUGE_VALF;[self.statusDot.layer addAnimation:pulse forKey:@"servicePulse"];}
+    } else [self.statusDot.layer removeAnimationForKey:@"servicePulse"];
+    self.heroTitle.text=running?@"服务已就绪":active?@"正在建立连接":failed?@"服务未能启动":@"准备好开始了吗";
     if(running&&s.lastRequestAt) {
         NSInteger elapsed=(NSInteger)[NSDate.date timeIntervalSinceDate:s.lastRequestAt];
         self.heroDetail.text=elapsed<3?@"刚刚收到已认证客户端的请求。":[NSString stringWithFormat:@"最近通信：%ld 秒前",(long)elapsed];
@@ -127,13 +131,14 @@
     self.readiness.text=support&&sdk?@"编译器与构建组件已就位，可以开始构建。":!support?@"编译器已内置，请安装构建资源和需要的 SDK。":@"构建资源已安装，再选择一套 SDK 即可。";
 }
 @end
-UIViewController *DXBuildHome(void) { return [DXBuildHomeController new]; }
+UIViewController *DXBuildHome(void) { UIViewController *c=[DXBuildHomeController new];c.navigationItem.backButtonDisplayMode=UINavigationItemBackButtonDisplayModeMinimal;return c; }
 @interface DXBuildAppDelegate : UIResponder <UIApplicationDelegate>
 @property (strong,nonatomic) UIWindow *window;
 @end
 @implementation DXBuildAppDelegate
 - (BOOL)application:(UIApplication *)application didFinishLaunchingWithOptions:(NSDictionary *)options {
     self.window=[[UIWindow alloc] initWithFrame:UIScreen.mainScreen.bounds];
+    self.window.tintColor=PBAccent();
     UINavigationBarAppearance *appearance=[UINavigationBarAppearance new];[appearance configureWithOpaqueBackground];appearance.backgroundColor=PBBackground();appearance.shadowColor=UIColor.clearColor;
     appearance.titleTextAttributes=@{NSFontAttributeName:PBFont(17,UIFontWeightSemibold),NSForegroundColorAttributeName:UIColor.labelColor};
     appearance.largeTitleTextAttributes=@{NSFontAttributeName:PBFont(32,UIFontWeightBold),NSForegroundColorAttributeName:UIColor.labelColor};
@@ -154,15 +159,22 @@ UIViewController *DXBuildHome(void) { return [DXBuildHomeController new]; }
         if([name isEqual:@"resources"]||[name isEqual:@"pairing"]){root=PBWelcomeScreen(YES);[root setValue:@([name isEqual:@"resources"]?2:3) forKey:@"page"];}
         if([name isEqual:@"running"])[DXBuildService.shared startAddress:@"127.0.0.1" port:8787];
     }
-    if([arguments containsObject:@"--ui-restart-service"]){[DXBuildService.shared stop];[DXBuildService.shared startAddress:@"127.0.0.1" port:8787];}
     if([arguments containsObject:@"--ui-pairing-check"]) {
         DXBuildService *service=DXBuildService.shared;NSError *error=nil;
         NSAssert(![service saveFixedCode:@"short" error:&error]&&error,@"Short pairing code must be rejected");
         error=nil;NSAssert(![service saveFixedCode:@"中文连接代码1234" error:&error]&&error,@"HTTP credentials must be ASCII");
+        error=nil;NSAssert(![service saveFixedCode:@"PocketBuild-Test-Next\n" error:&error]&&error,@"HTTP credentials must not contain newlines");
         NSAssert([service saveFixedCode:@"PocketBuild-Test-Next" error:&error],@"%@",error);
         NSAssert(![service.code isEqual:service.fixedCode],@"Saving preferences must not replace the active code");
-        [service stop];[service startAddress:@"127.0.0.1" port:8787];
-        NSAssert([service.code isEqual:@"PocketBuild-Test-Next"],@"Restart must activate the saved code");
+    }
+    if([arguments containsObject:@"--ui-restart-service"]||[arguments containsObject:@"--ui-pairing-check"]) {
+        dispatch_after(dispatch_time(DISPATCH_TIME_NOW,.5*NSEC_PER_SEC),dispatch_get_main_queue(),^{
+            [DXBuildService.shared stop];
+            dispatch_after(dispatch_time(DISPATCH_TIME_NOW,.25*NSEC_PER_SEC),dispatch_get_main_queue(),^{
+                [DXBuildService.shared startAddress:@"127.0.0.1" port:8787];
+                if([arguments containsObject:@"--ui-pairing-check"])NSAssert([DXBuildService.shared.code isEqual:@"PocketBuild-Test-Next"],@"Restart must activate the saved code");
+            });
+        });
     }
 #endif
     UINavigationController *navigation=[[UINavigationController alloc] initWithRootViewController:root];navigation.navigationBar.prefersLargeTitles=YES;navigation.navigationBar.tintColor=UIColor.labelColor;

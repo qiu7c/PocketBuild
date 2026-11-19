@@ -14,7 +14,9 @@ OUT.mkdir(parents=True, exist_ok=True)
 
 
 def sim(*args, check=True):
-    return subprocess.run(["xcrun", "simctl", *args], check=check, text=True, capture_output=True)
+    print("simctl", *args, flush=True)
+    return subprocess.run(["xcrun", "simctl", *args], check=check, text=True, capture_output=True,
+                          timeout=300 if args[0] == "bootstatus" else 120)
 
 
 devices = json.loads(sim("list", "devices", "available", "--json").stdout)["devices"]
@@ -61,7 +63,7 @@ def request(code, expected=200):
 
 
 def screenshot(uid, name):
-    time.sleep(1.2)
+    time.sleep(3)
     sim("io", uid, "screenshot", str(OUT / (name + ".png")))
 
 
@@ -78,8 +80,10 @@ screenshot(uid, "light-running")
 launch(uid, "running")
 assert request(CODE)["name"] == "PocketBuild", "Fixed code must survive application restart"
 launch(uid, "running", "--ui-restart-service")
+time.sleep(3)
 assert request(CODE)["name"] == "PocketBuild", "Fixed code must survive service restart"
 launch(uid, "running", "--ui-pairing-check")
+time.sleep(3)
 assert request("PocketBuild-Test-Next")["name"] == "PocketBuild"
 request(CODE, expected=401)
 launch(uid, "running", "--ui-random-code")
