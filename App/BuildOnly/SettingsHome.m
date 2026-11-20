@@ -256,11 +256,18 @@ static void SettingsSwitch(UITableViewCell *cell, NSString *title, BOOL on, NSIn
     about.title = @"关于";
     UIStackView *content = PBPageContent(about.view, about.view.bottomAnchor);
     UIStackView *card = PBCard();
+    card.alignment = UIStackViewAlignmentCenter;
     NSBundle *bundle = NSBundle.mainBundle;
     UIImageView *mark = [[UIImageView alloc] initWithImage:[UIImage imageNamed:@"BrandMark"]];
-    mark.contentMode = UIViewContentModeScaleAspectFit;
-    [mark.heightAnchor constraintEqualToConstant:72].active = YES;
+    mark.contentMode = UIViewContentModeScaleAspectFill;
+    mark.layer.cornerRadius = 16;
+    mark.layer.cornerCurve = kCACornerCurveContinuous;
+    mark.clipsToBounds = YES;
     [card addArrangedSubview:mark];
+    [NSLayoutConstraint activateConstraints:@[
+        [mark.widthAnchor constraintEqualToConstant:72],
+        [mark.heightAnchor constraintEqualToAnchor:mark.widthAnchor],
+    ]];
     UILabel *title = PBLabel(@"PocketBuild", 20, UIFontWeightSemibold, UIColor.labelColor);
     title.textAlignment = NSTextAlignmentCenter;
     [card addArrangedSubview:title];
@@ -269,6 +276,12 @@ static void SettingsSwitch(UITableViewCell *cell, NSString *title, BOOL on, NSIn
     UILabel *label = PBLabel(version, 13, UIFontWeightRegular, UIColor.secondaryLabelColor);
     label.textAlignment = NSTextAlignmentCenter;
     [card addArrangedSubview:label];
+    UIButton *author = PBLinkButton(@"作者 · Cc", @"person.crop.circle");
+    __weak typeof(self) weak = self;
+    [author addAction:[UIAction actionWithHandler:^(UIAction *action) {
+        [weak openURL:@"https://github.com/qiu7c"];
+    }] forControlEvents:UIControlEventPrimaryActionTriggered];
+    [card addArrangedSubview:author];
     [content addArrangedSubview:card];
     [content addArrangedSubview:PBLabel(@"在 iPhone 和 iPad 上编译，并通过浏览器或 MCP 与电脑协作。PocketBuild 基于 Dylix 的本机构建核心。", 14, UIFontWeightRegular, UIColor.secondaryLabelColor)];
     [self.navigationController pushViewController:about animated:YES];

@@ -1,22 +1,23 @@
 # PocketBuild MCP 使用教程
 
-连接路径是 AI 客户端 → Windows 上的 stdio MCP 进程 → 手机 PocketBuild 的局域网 HTTP 服务。浏览器与 MCP 共用同一套服务、连接码和工程。手机 App 不包含聊天界面，也不需要模型账号。
+AI 客户端在 Windows 上通过 stdio 启动 PocketBuild 的 MCP 桥接脚本。脚本用局域网 HTTP 连接 iPhone 或 iPad，与浏览器工作台共用地址、连接码和手机上的工程。
 
-## 准备
+## 1. 准备手机和电脑
 
-手机最低 iOS 15.0，保持 PocketBuild 前台运行。安装构建资源和需要的 SDK。Windows 连接手机个人热点或与手机处于同一局域网。在 PocketBuild 启动服务，记下显示的访问地址和当前连接码。
-
-Windows 安装 Python 3.10 或以上版本。以下示例假定源码在 C:/PocketBuild，允许 AI 操作的本地工程目录为 C:/Projects。
+1. 让 Windows 连接 iPhone 个人热点，或让两台设备接入同一局域网。
+2. 在手机「组件」安装「构建资源」和工程需要的 SDK。第一次可选「常规」，使用 iOS 16.4 SDK。
+3. 在手机「工作台」点「启动服务」，记下当前访问地址和连接码。连接和构建期间将 PocketBuild 保持在前台。
+4. Windows 安装 Python 3.10 或以上。把 PocketBuild 源码解压或克隆到本地，并准备一个存放待编译工程的目录。下面以 `C:/PocketBuild` 和 `C:/Projects` 为例。
 
 ```powershell
-cd C:/PocketBuild
+Set-Location C:/PocketBuild
 python -m venv .venv
-.venv/Scripts/python.exe -m pip install -r desktop/requirements.txt
+.\.venv\Scripts\python.exe -m pip install -r desktop/requirements.txt
 ```
 
-## 客户端配置
+## 2. 添加 stdio MCP 服务器
 
-支持 mcpServers JSON 配置的客户端可参考 desktop/mcp.config.example.json。替换 Python 路径、脚本路径、手机访问地址、工作目录及连接码。
+支持 `mcpServers` JSON 的客户端可以使用下面的配置，也可以复制仓库里的[配置示例](../desktop/mcp.config.example.json)。
 
 ```json
 {
@@ -28,68 +29,69 @@ python -m venv .venv
         "--phone", "http://172.20.10.1:8787",
         "--workspace", "C:/Projects"
       ],
-      "env": {"POCKETBUILD_TOKEN": "手机上显示的当前连接码"}
+      "env": {
+        "POCKETBUILD_TOKEN": "替换为手机当前连接码"
+      }
     }
   }
 }
 ```
 
-其他客户端选择 stdio 传输，分别填写同样的 command、args 和环境变量。手机地址以 App 实际显示值为准。建议在手机「连接设置」开启固定连接码，保存后重启服务，再把显示的码填入 POCKETBUILD_TOKEN；固定码跨 App 和服务重启保留。随机模式每次启动服务刷新连接码，更新配置后重启客户端中的 MCP 进程。
+按实际情况替换两个程序路径、手机地址、连接码及 `--workspace`。工作目录必须已存在，上传和下载都在这棵目录下。使用图形设置的客户端选择 **stdio**，分别填入 `command`、`args` 和环境变量。
 
-该桥使用官方 [MCP Python SDK](https://github.com/modelcontextprotocol/python-sdk/tree/v1.x) 的 FastMCP 和 stdio 传输，依赖限制在 v1 系列。单独在终端启动时等待协议输入是正常现象，实际由 AI 客户端启动并调用。
+配置保存后，重新加载 MCP 服务器，让客户端调用 `connect_device({})`。成功时会返回 PocketBuild 的版本、构建号、手机系统版本和组件状态。脚本由 AI 客户端启动。直接在终端运行时，它会等待 stdio 协议输入。
 
-## 工具及调用顺序
+常用电脑可在手机「连接设置」选择固定码。修改连接码后重启手机服务，再更新客户端配置。随机模式每次启动手机服务都会换码，更新后重新加载 MCP。
 
-| 工具 | 用途 |
-| --- | --- |
-| connect_device | 检查连接、手机系统版本、构建组件安装状态 |
-| list_projects | 列出手机工程 |
-| rename_project | 修改指定项目的显示名称，保留项目 ID 和构建归属 |
-| list_builds | 根据 project_id 列出持久化的构建历史与失败原因 |
-| create_project | 新建工程，product_type 为 tweak 或 app；app 附带 UIKit 模板 |
-| list_project_files | 列出工程文件 |
-| upload_project | 将本地工作目录中的子目录上传到手机，可传 project_id 更新已有工程 |
-| read_project_file | 读取手机上的 UTF-8 文件 |
-| write_project_file | 分块保存 UTF-8 文件 |
-| start_build | 启动构建，返回 id |
-| get_build_status | 用 job_id 查询状态、阶段、进度和产物列表 |
-| read_build_log | 用 job_id、offset 读取日志；下次使用 next_offset |
-| cancel_build | 请求取消指定任务，当前工具步骤结束后生效 |
-| download_artifacts | 下载指定任务产物到本地工作目录下 |
+## 3. 发起第一次构建
 
-已有工程示例。
+以 `C:/Projects/HelloApp` 中已有 `MobileCompiler.json` 的工程为例。
 
 ```text
 connect_device({})
 upload_project({"directory":"HelloApp"})
-start_build({"project_id":"上传返回的 project_id"})
-get_build_status({"job_id":"构建返回的 id"})
-read_build_log({"job_id":"同一个 id","offset":0})
-download_artifacts({"job_id":"同一个 id","output_directory":"artifacts"})
+start_build({"project_id":"upload_project 返回的 project_id"})
+get_build_status({"job_id":"start_build 返回的 id"})
+download_artifacts({"job_id":"同一构建 id","output_directory":"artifacts"})
 ```
 
-从模板开始时先 create_project({"name":"Demo","product_type":"app"})，再列出、读取和修改文件。上传已有工程会逐文件覆盖同名文件，不删除手机上的其他文件；完整替换工程时新建空工程后上传。上传本地 App 工程也可以直接使用 upload_project，它会新建空工程并采用上传的 MobileCompiler.json。
+用同一个 `job_id` 查询状态。运行中可以调用 `read_build_log`，第一次传 `offset: 0`，之后使用返回的 `next_offset`。构建结束后下载，文件默认保存到 `C:/Projects/artifacts/<job_id>/`。失败时先查看状态中的 `issue` 和日志。有报告或日志产物时也可下载。
 
-返回状态包括 running、succeeded、failed、cancelled、interrupted。构建编号在手机 App 重启后仍可查询，记录按 project_id 归档，直到用户清理。缺少组件时 start_build 也会返回一条失败记录，issue.components 中列出所需项。编译错误的 issue 可包含 file、line 和 column。存在报告和日志时可在构建完成后下载对应文件。
+想先试模板，调用 `create_project({"name":"Demo","product_type":"app"})`，将返回的 `id` 作为 `start_build` 的 `project_id`。上传同一工程的新版本时，传入原来的 `project_id`。上传会覆盖同名文件并保留其他文件，目录整体替换可以另建项目。上传跳过 `.git`、`.theos`、`DerivedData`、`__pycache__` 和符号链接。
 
-上传排除 .git、.theos、DerivedData、__pycache__ 和符号链接。本地上传和下载限制在 --workspace 内，局域网请求绕过 Windows 的 HTTP 代理。
+## 工具速查
+
+| 工具 | 用法 |
+| --- | --- |
+| `connect_device` | 检查配对、版本和组件 |
+| `list_projects` | 列出手机上的工程 |
+| `create_project` | 创建工程。默认 `tweak`，`app` 会生成 UIKit 模板 |
+| `rename_project` | 通过 `project_id` 和 `name` 修改项目显示名 |
+| `list_project_files` | 列出工程内文件的相对路径 |
+| `upload_project` | 上传工作目录内的工程目录。可传 `project_id` 更新现有工程，或传 `project_name` 命名新工程 |
+| `read_project_file` | 用 `project_id` 和 `path` 读取 UTF-8 文件 |
+| `write_project_file` | 用 `project_id`、`path` 和 `content` 保存 UTF-8 文件 |
+| `start_build` | 用 `project_id` 启动构建，返回构建 `id` |
+| `get_build_status` | 用 `job_id` 查询阶段、进度、问题和产物 |
+| `read_build_log` | 用 `job_id` 和 `offset` 增量读取构建日志 |
+| `cancel_build` | 用 `job_id` 请求在当前编译步骤后取消 |
+| `list_builds` | 用 `project_id` 查看保存在手机上的历史构建 |
+| `download_artifacts` | 用 `job_id` 下载本次产物，可传 `output_directory` |
 
 ## 给 AI 的指令示例
 
 ```text
-使用 PocketBuild MCP，把工作目录中的 HelloApp 编译为 iPhone App。
-先调用 connect_device 检查连接和 SDK，再读取工程 MobileCompiler.json。
-使用手机当前支持的 Objective-C/C/C++ 与 UIKit 构建路径。
-上传工程后启动构建，保存返回的任务 id，用这个 id 查询状态和增量日志。
-失败时先读取报告和错误位置，修改源码后重新构建。
-成功后将 IPA、报告和日志下载到 artifacts，并告诉我本地文件路径。
-需要 Swift、Storyboard 或其他当前不支持的构建步骤时，明确指出缺少的能力。
+用 PocketBuild MCP 编译工作目录下的 HelloApp。
+先调用 connect_device 检查连接和已安装的组件，再上传工程并启动构建。
+用返回的构建 ID 查询状态，必要时读取增量日志。
+缺少组件时，告诉我需要在手机安装哪些组件。
+编译报错时，告诉我文件、行号和报错内容，等我确认后再修改源码。
+成功后把产物下载到 artifacts，给我完整的本地文件路径。
 ```
 
-## 连接排查
+## 连接和构建排查
 
-- 先用 Windows 浏览器打开手机显示的地址。浏览器也打不开时检查手机前台状态、选中的热点地址和 Windows 网络连接。
-- HTTP 401 表示连接码不匹配。随机模式重启服务后需要更新连接码；固定模式修改、保存并重启服务后更新。
-- 提示缺少 SDK 或构建资源时，在手机「管理组件」页面安装组件。
-- 指定任务返回 404 时核对任务编号，或确认该构建是否已清理。
-- Build 6 已在 iOS 16.3.1 / TrollStore 环境通过热点局域网完成真实 MCP 联调，包括工程上传、原始 Logos 源码构建为 arm64 dylib/三种 DEB，以及日志和产物下载。插件宿主运行、普通证书及其他系统环境仍需验证。
+- **连接超时。** 先在 Windows 浏览器打开工作台显示的地址，再用手机「连接诊断」确认请求有没有到达。检查两台设备是否在同一网络、PocketBuild 是否在前台，以及服务是否已启动。
+- **HTTP 401。** 配置的连接码与当前会话不匹配。重新复制手机工作台显示的码，并重新加载 MCP。
+- **缺少组件。** 在手机「组件」安装 `issue.components` 列出的项目后重试。
+- **任务返回 404。** 核对传入的是 `start_build` 返回的构建 `id`，并确认该记录仍在手机的「构建」页。

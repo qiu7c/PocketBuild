@@ -1,6 +1,10 @@
 # 第三方组件与许可证
 
-本清单与 App 内的 `Resources/ThirdPartyNotices/` 一同保留。各组件维持原版权；GPL 仅适用于本项目有权许可的原创部分。
+PocketBuild 的本机构建沿用 Dylix 的工具链。编译框架的来源与版本见 [dependencies.lock.json](dependencies.lock.json)，按需安装的构建资源和 SDK 见 [内置组件清单](Resources/PocketBuild/PackageCatalog.json)。电脑端的 MCP 桥接使用 MCP Python SDK（MIT），依赖范围见 [requirements.txt](desktop/requirements.txt)。
+
+## 上游 Dylix 版权记录
+
+以下保留 Dylix 的版权和第三方归属记录。记录中的历史构建号、功能和源码路径对应上游 Dylix。原始许可文本随 `Resources/ThirdPartyNotices/` 保留。
 
 - **LLVM** — Apache-2.0 with LLVM exceptions。https://github.com/llvm/llvm-project/tree/llvmorg-14.0.0；许可文本：[`llvm-LICENSE.txt`](Resources/ThirdPartyNotices/llvm-LICENSE.txt)。
 - **Clang** — Apache-2.0 with LLVM exceptions。https://github.com/holzschu/llvm-project；许可文本：[`clang-LICENSE.txt`](Resources/ThirdPartyNotices/clang-LICENSE.txt)。

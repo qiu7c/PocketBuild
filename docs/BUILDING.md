@@ -36,7 +36,15 @@ python3 scripts/build_buildonly.py --packages
 
 输出目录为 `build/pocketbuild-device/packages/`，包含构建资源包、iOS 16.4 SDK、iOS 26.0 SDK 和资源清单。需要用独立 SDK 副本时传入 `--sdk16` 和 `--sdk26`。托管组件时，`--package-base-url` 可设置清单使用的服务器目录。
 
-如果只需更新两个 SDK，Windows 和 macOS 都可以运行 `python scripts/build_buildonly.py --sdk-packages-only`，产物在 `build/sdk-packages/`。归档会把 SDK 内的框架和文件链接展开到编译器使用的路径。
+GitHub Actions 将 IPA 和组件包分别上传到 `PocketBuild` 和 `PocketBuild-resources`。App 的内置源和校验值见 [PackageCatalog.json](../Resources/PocketBuild/PackageCatalog.json)。
+
+如果只需更新两个 SDK，Windows 和 macOS 都可以运行 `python scripts/build_buildonly.py --sdk-packages-only`，生成两个 SDK ZIP 及对应清单，输出到 `build/sdk-packages/`。归档会把 SDK 内的框架和文件链接展开到编译器使用的路径。
+
+在局域网托管组件时，将生成的清单和 ZIP 放进同一目录。可以在该目录运行 `python -m http.server 8000`，然后在 App「组件」右上角的下载源菜单填入 `http://<电脑的局域网 IP>:8000/PocketBuild-packages.json` 并启用备用源。清单可以使用相对下载地址，也可以只覆盖部分组件。
+
+## 工程配置
+
+在 `MobileCompiler.json` 中设置 `"hiddenVisibility": true` 会向每个编译单元传入 `-fvisibility=hidden`。省略该字段或设为 `false` 时使用编译器默认值。Makefile 导入识别 `-fvisibility=hidden` 和 `-fvisibility=default`。可以在构建日志中的 Clang 命令核对生效参数。
 
 ## 本地检查
 

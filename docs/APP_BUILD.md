@@ -1,6 +1,6 @@
 # 手机本机 App 工程编译
 
-当前路径支持 Objective-C、Objective-C++、C、C++ 与通过代码创建界面的 UIKit App。工程通过 MobileCompiler.json 描述单个可执行目标。浏览器选择「UIKit App / IPA」或 MCP create_project 的 product_type=app 可生成示例。
+PocketBuild 支持用 Objective-C、Objective-C++、C 和 C++ 编写的代码式 UIKit App。工程用 `MobileCompiler.json` 描述单个可执行目标。在浏览器新建「UIKit App / IPA」，或用 [MCP](MCP.md) 调用 `create_project` 并传入 `product_type: "app"`，即可生成示例。
 
 ## 配置示例
 
@@ -33,7 +33,7 @@ PocketBuild 本身最低 iOS 15.0。生成的 App 由 deploymentTarget 指定最
 
 先安装构建资源与至少一套 SDK。可选 SDK 16.4 或 26.0。SDK 26.0 配合当前 Clang 14 处理 C++/Objective-C++ 时还需要 SDK 16.4 的标准库兼容头文件。
 
-构建配置保留 arm64 和 arm64e。在 iOS 16.3.1 的插件试构建中，Clang 生成了 CPU 子类型 2 的 arm64e 对象文件，链接命令返回 0，但输出未通过 arm64e 子类型校验，因此未导出为成功产物。这是当前内嵌工具链的一次实际结果；arm64e App 构建及宿主加载尚未验证。
+示例使用 arm64。构建配置也提供 arm64e 选项。此前 iOS 16.3.1 的插件试构建生成了 arm64e 对象文件，最终链接产物未通过架构校验。arm64e App 构建仍待验证。
 
 ## 构建产物
 
@@ -42,7 +42,7 @@ PocketBuild 本身最低 iOS 15.0。生成的 App 由 deploymentTarget 指定最
 3. 组装 Payload/产品名.app，写入 Info.plist，复制配置的普通资源。
 4. 打包 产品名-unsigned.ipa，保留可执行权限。浏览器或 MCP 可以下载 IPA、report.json、symbols.json 和 build.log。
 
-完整 .app 保存在手机 Documents/Build-任务目录/Payload 中，浏览器和 MCP 以 IPA 提供下载。IPA 内可执行文件有链接器生成的 ad-hoc 签名，但没有安装用的证书签名与描述文件。下载后按实际安装方式完成签名，安装和运行需要真机验证。
+浏览器、MCP 和手机「构建」页都可导出 IPA。IPA 内可执行文件带链接器生成的 ad-hoc 签名，下载后按设备的安装方式完成签名。
 
 ## 当前边界
 
@@ -52,4 +52,6 @@ PocketBuild 本身最低 iOS 15.0。生成的 App 由 deploymentTarget 指定最
 
 ## 验证
 
-Windows 已检查原生代码语法及 MCP、浏览器传输流程。2026-11-19，[首次 macOS 云编译](https://github.com/qiu7c/PocketBuild/actions/runs/44488562631)通过了 python3 scripts/test_pocketbuild_app.py，使用生产打包代码和 Xcode 工具验证可执行链接参数、签名验证、IPA 元数据、资源布局、权限与取消清理，并成功构建 PocketBuild 本身的 IPA。Build 6 已在手机上验证 Logos 插件到 arm64 dylib 和三种 DEB 的完整构建；手机本机 UIKit App/IPA 构建和安装仍待验收。
+PocketBuild Build 10 已在 iOS 16.3.1 / TrollStore 环境完成 arm64 UIKit 示例的手机本机构建，并从电脑下载生成的 IPA。示例产物的安装和运行仍待单独验证。
+
+macOS 工作流使用 `scripts/test_pocketbuild_app.py` 检查实际链接、签名检查、IPA 结构、资源复制和取消清理。开发者的验证命令见 [PocketBuild 构建指南](BUILDING.md)。
