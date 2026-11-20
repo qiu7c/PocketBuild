@@ -43,6 +43,11 @@ class PhoneFixture(BaseHTTPRequestHandler):
             self.reply({"id": identifier, "name": body["name"]})
         elif action == "projects":
             self.reply({"projects": [{"id": key, "name": value["name"]} for key, value in self.server.projects.items()]})
+        elif action == "rename_project":
+            self.server.projects[body["project"]]["name"] = body["name"]
+            self.reply({"id": body["project"], "name": body["name"]})
+        elif action == "history":
+            self.reply({"builds": [job for job in self.server.jobs.values() if job["project"] == body["project"]]})
         elif action == "files":
             self.reply({"files": list(self.server.projects[body["project"]]["files"])})
         elif action == "read":
@@ -71,8 +76,12 @@ class PhoneFixture(BaseHTTPRequestHandler):
             self.reply({"aborted": True})
         elif action == "build":
             identifier = str(uuid4())
-            self.server.jobs[identifier] = {"id": identifier, "state": "running", "log": "编译开始\n", "artifacts": []}
-            self.reply({"id": identifier, "state": "running"})
+            state = "failed" if self.server.missing_sdk else "running"
+            job = {"id": identifier, "project": body["project"], "state": state, "log": "编译开始\n", "artifacts": []}
+            if self.server.missing_sdk:
+                job["issue"] = {"kind": "components", "components": [{"id": "sdk16", "title": "iOS 16.4 SDK"}]}
+            self.server.jobs[identifier] = job
+            self.reply(job)
         elif action in ("job", "cancel"):
             job = self.server.jobs.get(body.get("job_id"))
             if not job:
@@ -104,6 +113,7 @@ class MCPTests(unittest.IsolatedAsyncioTestCase):
         server = ThreadingHTTPServer(("127.0.0.1", 0), PhoneFixture)
         server.projects, server.uploads, server.jobs, server.calls = {}, {}, {}, []
         server.fail_upload = False
+        server.missing_sdk = False
         server.artifact = b"IPA transport fixture\x00" * 100000
         thread = Thread(target=server.serve_forever, daemon=True)
         thread.start()
@@ -123,7 +133,8 @@ class MCPTests(unittest.IsolatedAsyncioTestCase):
                 async with stdio_client(parameters) as (read, write), ClientSession(read, write) as session:
                     await session.initialize()
                     tools = await session.list_tools()
-                    self.assertEqual(len(tools.tools), 12)
+                    self.assertIn("rename_project", {tool.name for tool in tools.tools})
+                    self.assertIn("list_builds", {tool.name for tool in tools.tools})
 
                     async def call(tool_name, **arguments):
                         reply = await session.call_tool(tool_name, arguments)
@@ -160,6 +171,18 @@ class MCPTests(unittest.IsolatedAsyncioTestCase):
                     second = (await call("start_build", project_id=identifier))["id"]
                     await call("cancel_build", job_id=second)
                     self.assertEqual(server.jobs[second]["state"], "cancelled")
+                    same_name = (await call("create_project", name="Demo", product_type="app"))["id"]
+                    self.assertNotEqual(identifier, same_name)
+                    renamed = await call("rename_project", project_id=identifier, name="Renamed")
+                    self.assertEqual(renamed["id"], identifier)
+                    history = await call("list_builds", project_id=identifier)
+                    self.assertEqual({entry["id"] for entry in history["builds"]}, {job, second})
+                    self.assertEqual((await call("list_builds", project_id=same_name))["builds"], [])
+                    server.missing_sdk = True
+                    rejected = await call("start_build", project_id=same_name)
+                    self.assertEqual(rejected["state"], "failed")
+                    self.assertEqual(rejected["issue"]["components"][0]["id"], "sdk16")
+                    self.assertEqual((await call("get_build_status", job_id=rejected["id"]))["project"], same_name)
                     downloaded = await call("download_artifacts", job_id=job)
                     self.assertEqual(Path(downloaded["files"][0]).read_bytes(), server.artifact)
                     self.assertFalse(list(workspace.rglob(".download-*")))

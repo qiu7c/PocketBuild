@@ -1,5 +1,6 @@
 #import "Toolchains.h"
 #import "PackagePaths.h"
+#import "BuildBackground.h"
 #import "../ArchiveImport.h"
 #import <CommonCrypto/CommonDigest.h>
 #import <dlfcn.h>
@@ -56,7 +57,12 @@ static NSError *PackageError(NSString *message) {
 - (void)publish {
     [NSNotificationCenter.defaultCenter postNotificationName:PBPackagesChanged object:self];
 }
-- (void)setBuildRunning:(BOOL)buildRunning { _buildRunning=buildRunning; [self publish]; }
+- (void)setBuildRunning:(BOOL)buildRunning {
+    if (_buildRunning == buildRunning) return;
+    _buildRunning = buildRunning;
+    PBSetBackgroundBuildActive(buildRunning);
+    [self publish];
+}
 - (BOOL)usingCustomSource { return self.catalog != self.bundledCatalog; }
 - (void)applySourceOverrides:(NSDictionary<NSString *, NSDictionary *> *)overrides {
     NSMutableArray *resolved = [NSMutableArray arrayWithCapacity:self.bundledCatalog.count];

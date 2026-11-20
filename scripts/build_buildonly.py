@@ -12,7 +12,7 @@ import zipfile
 
 ROOT = Path(__file__).resolve().parents[1]
 VERSION = "0.1.0"
-BUILD_NUMBER = "9"
+BUILD_NUMBER = "10"
 
 
 def compiler_source() -> str:
@@ -58,7 +58,7 @@ def compiler_source() -> str:
     hooks = {
         'self.lastBuild = [documents stringByAppendingPathComponent:[@"Build-" stringByAppendingString:NSUUID.UUID.UUIDString]];':
             'self.lastBuild = self.trialWorkspace ? [self.trialWorkspace stringByAppendingPathComponent:@"output"] : '
-            '[documents stringByAppendingPathComponent:[@"Build-" stringByAppendingString:NSUUID.UUID.UUIDString]];',
+            '(self.projectBuildDirectory ?: [documents stringByAppendingPathComponent:[@"Build-" stringByAppendingString:NSUUID.UUID.UUIDString]]);',
         'TMCDocumentPublishBuild(documents,build,nil);': 'if (!self.trialWorkspace) TMCDocumentPublishBuild(documents,build,nil);',
         'NSString *projectDirectory=self.importedProject?:source.stringByDeletingLastPathComponent;':
             'NSString *projectDirectory=(self.importedProject?:source.stringByDeletingLastPathComponent).stringByStandardizingPath;',
@@ -225,6 +225,7 @@ def main() -> None:
             json.dumps({"schema":1,"version":VERSION,"packages":entries},ensure_ascii=False,indent=2),encoding="utf-8")
 
     shutil.copytree(ROOT / "Resources/BuildWeb", app / "BuildWeb")
+    shutil.copy2(ROOT / "Resources/PocketBuild/Assets.xcassets/AppIcon.appiconset/icon-120.png", app / "BuildWeb/brand.png")
     shutil.copytree(ROOT / "Resources/AppTemplate", app / "AppTemplate")
     shutil.copy2(ROOT / "Resources/PocketBuild/PocketBuild-icon-square.png", app / "BrandMark.png")
     shutil.copy2(ROOT / "Resources/PocketBuild/PackageCatalog.json", app / "PackageCatalog.json")
@@ -237,6 +238,10 @@ def main() -> None:
     sources = [ROOT / "App" / name for name in (
         "BuildOnly/BuildHome.m", "BuildOnly/ToolsHome.m", "BuildOnly/BuildService.m", "BuildOnly/Toolchains.m",
         "BuildOnly/ScreenAwake.m", "BuildOnly/Appearance.m", "BuildOnly/ConnectionSettings.m", "BuildOnly/Welcome.m",
+        "BuildOnly/Workspace.m", "BuildOnly/BuildRecords.m", "BuildOnly/BuildBackground.m",
+        "BuildOnly/SettingsHome.m", "BuildOnly/StoragePage.m",
+        "BuildOnly/ProjectRecords.m", "BuildOnly/ConnectionDiagnostics.m", "BuildOnly/SourceEditor.m",
+        "BuildOnly/SDKResources.m", "DebPackage.m", "OutputNaming.m",
         "Remote/DXRemoteHTTP.m", "ArchiveImport.m", "TheosMakefile.m",
     )]
     simulated = []
@@ -247,7 +252,7 @@ def main() -> None:
             "keychain-access-groups":["PBLOCAL01.com.qiu7c.pocketbuild"],
         }))
         simulated = ["-Xlinker","-sectcreate","-Xlinker","__TEXT","-Xlinker","__entitlements","-Xlinker",str(entitlements)]
-    subprocess.run(common + simulated + [*map(str,sources), "-o", str(app / "PocketBuild")],check=True)
+    subprocess.run(common + simulated + ["-framework","AVFAudio", *map(str,sources), "-o", str(app / "PocketBuild")],check=True)
     icons_info = build / "icons-info.plist"
     subprocess.run([
         "xcrun","actool","--compile",str(app),"--platform",platform,"--minimum-deployment-target","15.0",
@@ -261,6 +266,7 @@ def main() -> None:
         "CFBundleShortVersionString":VERSION, "CFBundleVersion":BUILD_NUMBER, "MinimumOSVersion":"15.0",
         "CFBundleSupportedPlatforms":["iPhoneSimulator" if args.simulator else "iPhoneOS"],
         "UIDeviceFamily":[1,2], "UILaunchScreen":{}, "UIFileSharingEnabled":True,
+        "UIBackgroundModes":["audio"],
         "LSSupportsOpeningDocumentsInPlace":True, "NSAppTransportSecurity":{"NSAllowsLocalNetworking":True},
         "NSLocalNetworkUsageDescription":"允许连接个人热点或局域网的电脑上传源码、触发编译和下载产物。",
     }

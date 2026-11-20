@@ -38,6 +38,9 @@ class PocketBuildPackagingTests(unittest.TestCase):
                 (root / name).write_text(name)
             (root / "Resources/PocketBuild").mkdir()
             (root / "Resources/PocketBuild/PocketBuild-icon-square.png").write_bytes(b"brand fixture")
+            icons = root / "Resources/PocketBuild/Assets.xcassets/AppIcon.appiconset"
+            icons.mkdir(parents=True)
+            (icons / "icon-120.png").write_bytes(b"web icon fixture")
             catalog = (original_root / "Resources/PocketBuild/PackageCatalog.json").read_bytes()
             (root / "Resources/PocketBuild/PackageCatalog.json").write_bytes(catalog)
             for name, version in (("Resources/SDK", "16.4"), ("LocalSDKs/iPhoneOS26.0.sdk", "26.0")):
@@ -76,10 +79,12 @@ class PocketBuildPackagingTests(unittest.TestCase):
                 self.assertFalse(any("SDK.zip" in name or "SDK26.zip" in name or "ClangInclude/" in name for name in names))
                 info = plistlib.loads(archive.read("Payload/PocketBuild.app/Info.plist"))
                 self.assertIn("Payload/PocketBuild.app/BrandMark.png", names)
+                self.assertEqual(archive.read("Payload/PocketBuild.app/BuildWeb/brand.png"), b"web icon fixture")
                 bundled = json.loads(archive.read("Payload/PocketBuild.app/PackageCatalog.json"))
                 self.assertEqual({item["id"] for item in bundled["packages"]}, {"support", "sdk16", "sdk26"})
                 self.assertTrue(all(item["url"].startswith("https://") for item in bundled["packages"]))
                 self.assertEqual(info["CFBundleIdentifier"], "com.qiu7c.pocketbuild")
+                self.assertEqual(info["UIBackgroundModes"], ["audio"])
                 self.assertEqual(info["CFBundleIcons"]["CFBundlePrimaryIcon"]["CFBundleIconName"], "AppIcon")
                 self.assertEqual(plistlib.loads(archive.read("Payload/PocketBuild.app/commandDictionary.plist")), {})
                 bootstrap_commands = plistlib.loads(archive.read("Payload/PocketBuild.app/extraCommandsDictionary.plist"))

@@ -51,13 +51,14 @@ NSDictionary *DXRemoteParseRequest(NSData *bytes,BOOL *complete,NSInteger *failu
 @property dispatch_queue_t queue;
 @property nw_listener_t listener;
 @property NSString *origin;
+@property NSError *listenerError;
 @property NSMutableSet<DXRemotePeer *> *peers;
 @property NSUInteger generation;
 @end
 @implementation DXRemoteHTTP
 - (instancetype)initWithQueue:(dispatch_queue_t)queue{if((self=[super init])){_queue=queue;_peers=[NSMutableSet new];}return self;}
 - (BOOL)startAddress:(NSString *)address port:(NSUInteger)port error:(NSError **)error{
- [self stop];struct in_addr ip;if(!port||port<1024||port>65535||inet_pton(AF_INET,address.UTF8String,&ip)!=1){if(error)*error=[NSError errorWithDomain:@"Dylix.Remote" code:1 userInfo:@{NSLocalizedDescriptionKey:@"请使用有效的局域网 IPv4 和 1024–65535 端口"}];return NO;}
+ [self stop];self.listenerError=nil;struct in_addr ip;if(!port||port<1024||port>65535||inet_pton(AF_INET,address.UTF8String,&ip)!=1){if(error)*error=[NSError errorWithDomain:@"Dylix.Remote" code:1 userInfo:@{NSLocalizedDescriptionKey:@"请使用有效的局域网 IPv4 和 1024–65535 端口"}];return NO;}
  SecIdentityRef identity=self.tlsIdentity;
  nw_parameters_t parameters=identity?nw_parameters_create_secure_tcp(^(nw_protocol_options_t options){sec_protocol_options_t security=nw_tls_copy_sec_protocol_options(options);sec_protocol_options_set_min_tls_protocol_version(security,tls_protocol_version_TLSv12);sec_protocol_options_set_local_identity(security,sec_identity_create(identity));sec_protocol_options_add_tls_application_protocol(security,"http/1.1");},NW_PARAMETERS_DEFAULT_CONFIGURATION):nw_parameters_create_secure_tcp(NW_PARAMETERS_DISABLE_PROTOCOL,NW_PARAMETERS_DEFAULT_CONFIGURATION);
  nw_parameters_set_local_endpoint(parameters,nw_endpoint_create_host(address.UTF8String,[[NSString stringWithFormat:@"%lu",(unsigned long)port] UTF8String]));
@@ -68,7 +69,7 @@ NSDictionary *DXRemoteParseRequest(NSData *bytes,BOOL *complete,NSInteger *failu
  nw_listener_set_state_changed_handler(listener,^(nw_listener_state_t state,nw_error_t failure){
   DXRemoteHTTP *s=weak;if(!s||generation!=s.generation)return;
   if(state==nw_listener_state_ready){if(s.stateChanged)s.stateChanged(@"running");}
-  else if(state==nw_listener_state_failed){[s stop];if(s.stateChanged)s.stateChanged(@"failed");}
+  else if(state==nw_listener_state_failed){if(failure)s.listenerError=CFBridgingRelease(nw_error_copy_cf_error(failure));[s stop];if(s.stateChanged)s.stateChanged(@"failed");}
  });
  nw_listener_set_new_connection_handler(listener,^(nw_connection_t connection){
   DXRemoteHTTP *s=weak;if(!s||generation!=s.generation){nw_connection_cancel(connection);return;}

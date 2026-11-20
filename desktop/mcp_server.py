@@ -48,9 +48,12 @@ class Phone:
                 message = json.loads(payload).get("error", payload)
             except ValueError:
                 message = payload
+            if error.code == 401:
+                raise ValueError("已访问手机，但连接码未通过。请核对工作台显示的连接码并重启 MCP 进程。") from None
             raise ValueError(f"Phone returned HTTP {error.code}: {message}") from None
-        except URLError as error:
-            raise ValueError(f"Cannot reach PocketBuild. Keep the phone app open and check its address. {error.reason}") from None
+        except (URLError, TimeoutError) as error:
+            reason = error.reason if isinstance(error, URLError) else error
+            raise ValueError(f"尚未收到 PocketBuild 的 HTTP 响应。请检查手机服务、热点和地址 {self.url}。{reason}") from None
 
     def upload(self, project: str, relative: str, stream) -> int:
         upload = self.request("upload_begin", project=project, path=relative)["upload"]
@@ -101,6 +104,16 @@ def create_server(phone: Phone) -> FastMCP:
     def list_projects() -> dict:
         """List projects stored in PocketBuild on the phone."""
         return phone.request("projects")
+
+    @server.tool()
+    def list_builds(project_id: str) -> dict:
+        """List persistent build records for a phone project, including preflight failures and interrupted builds."""
+        return phone.request("history", project=project_id)
+
+    @server.tool()
+    def rename_project(project_id: str, name: str) -> dict:
+        """Rename an existing phone project. Its UUID and build history keep the same association."""
+        return phone.request("rename_project", project=project_id, name=name)
 
     @server.tool()
     def list_project_files(project_id: str) -> dict:

@@ -9,6 +9,7 @@ NSDictionary * _Nullable DXRemoteParseRequest(NSData *bytes,BOOL *complete,NSInt
 @property(nonatomic,copy,nullable) void (^asyncHandler)(NSDictionary *request,void(^complete)(NSDictionary *response));
 @property(nonatomic,copy,nullable) void (^stateChanged)(NSString *state);
 @property(nonatomic,readonly) NSString *origin;
+@property(nonatomic,readonly,nullable) NSError *listenerError;
 // The caller owns the identity; Network.framework retains it in TLS options.
 @property(nonatomic,nullable) SecIdentityRef tlsIdentity;
 - (instancetype)initWithQueue:(dispatch_queue_t)queue;

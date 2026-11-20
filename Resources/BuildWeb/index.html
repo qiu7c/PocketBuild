@@ -3,45 +3,141 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
+<meta name="color-scheme" content="light dark">
 <title>PocketBuild</title>
+<link rel="icon" href="/brand.png">
 <link rel="stylesheet" href="/style.css">
 <script src="/app.js" defer></script>
 </head>
 <body>
-<header><strong>PocketBuild</strong><span id="connection">未连接</span><button id="disconnect" hidden>断开</button></header>
-<section id="login">
-<form id="connect-form"><label for="code">手机连接码</label><input id="code" type="password" autocomplete="off" required><button>连接手机</button></form>
-</section>
-<main id="workspace" hidden>
-<aside>
-<label for="project">项目</label><select id="project"></select>
-<label for="product-type">新项目类型</label><select id="product-type"><option value="tweak">插件 / dylib</option><option value="app">UIKit App / IPA</option></select>
-<div class="actions"><button id="create">新建项目</button><button id="upload">上传文件</button><button id="folder">上传文件夹</button></div>
-<input id="files-input" type="file" multiple hidden><input id="folder-input" type="file" webkitdirectory multiple hidden>
-<details><summary>构建设置</summary>
-<form id="options-form"><fieldset id="options-fields" disabled>
-<label>产物类型<select id="option-product"><option value="tweak">插件</option><option value="app">App / IPA</option></select></label>
-<div id="tweak-options">
-<label><input id="option-dylib" type="checkbox">独立 dylib</label>
-<label><input id="option-package" type="checkbox">生成 DEB</label>
-<label><input id="option-rootless" type="checkbox">无根</label>
-<label><input id="option-rootful" type="checkbox">有根</label>
-<label><input id="option-roothide" type="checkbox">隐根</label>
-</div>
-<label>CPU<select id="option-cpu"><option value="arm64">arm64</option><option value="arm64e">arm64e（待验证）</option></select></label>
-<label>SDK<select id="option-sdk"><option value="16.4">iOS 16.4</option><option value="26.0">iOS 26.0</option></select></label>
-<label>最低 iOS<input id="option-minimum" value="15.0" required></label>
-<button type="submit">保存设置</button>
-</fieldset></form>
-</details>
-<ul id="files"></ul>
-</aside>
-<section class="editor">
-<div class="bar"><span id="filename">选择文件</span><button id="new-file">新建文件</button><button id="save" disabled>保存</button><button id="build">编译</button><button id="cancel" disabled>取消构建</button></div>
-<textarea id="content" spellcheck="false" aria-label="源码编辑器" disabled></textarea>
-<section class="output"><div class="bar"><span id="job-state">无构建任务</span></div><pre id="log"></pre><div id="artifacts"></div></section>
-</section>
+<header class="topbar">
+    <div class="brand"><img src="/brand.png" width="28" height="28" alt=""><strong>PocketBuild</strong></div>
+    <div class="session"><span id="connection" class="status">未连接</span><button id="disconnect" class="quiet" type="button" hidden>断开</button></div>
+</header>
+<main id="login">
+    <section class="pairing" aria-labelledby="pairing-title">
+        <img src="/brand.png" width="56" height="56" alt="">
+        <h1 id="pairing-title">连接手机</h1>
+        <p>在手机 PocketBuild 的「工作台」启动服务，再输入屏幕上的连接码。</p>
+        <form id="connect-form">
+            <label for="code">连接码</label>
+            <input id="code" type="password" autocomplete="off" autocapitalize="none" spellcheck="false" required>
+            <p id="pairing-message" role="status"></p>
+            <button id="connect" class="primary">连接</button>
+        </form>
+        <p class="pairing-tip">电脑和手机须连接同一 Wi-Fi，或让电脑连到手机热点。</p>
+    </section>
 </main>
-<p id="message" role="status" aria-live="polite"></p>
+<main id="workspace" hidden>
+    <aside id="sidebar" aria-label="项目与文件">
+        <div class="sidebar-head">
+            <div class="section-heading"><label for="project">项目</label><button id="sidebar-close" type="button" class="quiet mobile-control">收起</button></div>
+            <div class="project-picker">
+                <select id="project"></select>
+                <details id="project-menu" class="project-menu">
+                    <summary aria-label="项目操作" title="项目操作"><span aria-hidden="true">···</span></summary>
+                    <div class="menu-items">
+                        <label for="product-type">新建或导入的类型</label>
+                        <select id="product-type"><option value="tweak">插件 / dylib</option><option value="app">UIKit App / IPA</option></select>
+                        <button id="create" type="button">新建项目</button>
+                        <button id="import-project" type="button">导入为新项目</button>
+                        <div class="menu-divider"></div>
+                        <button id="rename-project" type="button">重命名当前项目</button>
+                        <button id="upload" type="button">上传文件</button>
+                        <button id="folder" type="button">更新当前项目</button>
+                    </div>
+                </details>
+            </div>
+            <input id="files-input" type="file" multiple hidden>
+            <input id="folder-input" type="file" webkitdirectory multiple hidden>
+            <input id="import-input" type="file" webkitdirectory multiple hidden>
+            <div id="project-details" class="project-details" hidden>
+                <p id="project-target"></p>
+                <p id="project-outputs"></p>
+                <p id="project-readiness" class="status"></p>
+                <button id="refresh-project" class="quiet" type="button">刷新状态</button>
+            </div>
+            <details id="build-options" class="build-options">
+                <summary>构建设置</summary>
+                <form id="options-form">
+                    <fieldset id="options-fields" disabled>
+                        <label>产物类型<select id="option-product"><option value="tweak">插件</option><option value="app">App / IPA</option></select></label>
+                        <div id="tweak-options">
+                            <label><input id="option-dylib" type="checkbox">独立 dylib</label>
+                            <label><input id="option-package" type="checkbox">生成 DEB</label>
+                            <div class="package-schemes">
+                                <label><input id="option-rootless" type="checkbox">无根</label>
+                                <label><input id="option-rootful" type="checkbox">有根</label>
+                                <label><input id="option-roothide" type="checkbox">隐根</label>
+                            </div>
+                        </div>
+                        <label>CPU<select id="option-cpu"><option value="arm64">arm64</option><option value="arm64e">arm64e（待验证）</option></select></label>
+                        <label>SDK<select id="option-sdk"><option value="16.4">iOS 16.4</option><option value="26.0">iOS 26.0</option></select></label>
+                        <label>最低 iOS<input id="option-minimum" value="15.0" required></label>
+                        <button type="submit">保存设置</button>
+                    </fieldset>
+                </form>
+            </details>
+        </div>
+        <div class="file-browser">
+            <div class="section-heading"><h2>文件</h2><button id="new-file" type="button" class="quiet" title="新建文件">新建</button></div>
+            <p id="files-empty" class="placeholder"></p>
+            <ul id="files"></ul>
+        </div>
+    </aside>
+    <button id="sidebar-backdrop" type="button" aria-label="收起项目侧栏" tabindex="-1"></button>
+    <section class="editor" aria-label="编辑与构建">
+        <div class="editor-header">
+            <div class="editor-bar">
+                <button id="sidebar-toggle" type="button" class="quiet mobile-control" aria-expanded="false" aria-controls="sidebar">项目</button>
+                <span id="filename" title="选择文件">选择文件</span>
+                <span id="unsaved" title="有未保存的修改" aria-label="有未保存的修改" hidden></span>
+                <button id="save" class="quiet" type="button" title="保存（Ctrl 或 Command + S）" disabled>保存</button>
+                <button id="build" class="primary" type="button" title="编译（Ctrl 或 Command + Enter）">编译</button>
+                <button id="cancel" type="button" disabled hidden>取消</button>
+            </div>
+            <div id="source-context" hidden>
+                <span>本次构建的源码快照 · 只读</span>
+                <button id="edit-current" type="button" class="quiet" hidden>编辑当前源码</button>
+            </div>
+        </div>
+        <div class="source">
+            <div id="editor-empty" class="editor-empty"><strong>选择文件开始编辑</strong><p>在项目菜单中可新建项目或导入源码目录。</p></div>
+            <div id="line-numbers" class="gutter" aria-hidden="true" hidden></div>
+            <textarea id="content" spellcheck="false" autocomplete="off" autocapitalize="none" wrap="off" aria-label="源码编辑器" disabled hidden></textarea>
+        </div>
+        <section class="output" aria-label="构建结果">
+            <div class="output-bar">
+                <div class="output-tabs" role="tablist" aria-label="构建输出">
+                    <button id="tab-problems" role="tab" type="button" aria-controls="panel-problems" aria-selected="false" tabindex="-1">问题<span id="problem-count" class="count" hidden>1</span></button>
+                    <button id="tab-log" role="tab" type="button" aria-controls="panel-log" aria-selected="true">日志</button>
+                    <button id="tab-artifacts" role="tab" type="button" aria-controls="panel-artifacts" aria-selected="false" tabindex="-1">产物<span id="artifact-count" class="count" hidden></span></button>
+                </div>
+                <button id="load-history" type="button" class="quiet">历史</button>
+            </div>
+            <div class="build-status">
+                <span id="job-state" class="status">无构建任务</span>
+                <select id="job-history" aria-label="构建历史" hidden></select>
+            </div>
+            <div id="panel-problems" class="output-panel" role="tabpanel" aria-labelledby="tab-problems" tabindex="0" hidden>
+                <p id="issues-empty" class="placeholder">还没有构建问题</p>
+                <div id="build-issue" hidden><p id="issue-message"></p><button id="jump-to-error" type="button" hidden>定位源码</button></div>
+            </div>
+            <div id="panel-log" class="output-panel" role="tabpanel" aria-labelledby="tab-log" tabindex="0">
+                <div id="log-downloads" hidden>
+                    <button id="download-log" class="quiet" type="button" hidden>下载完整日志</button>
+                    <button id="download-report" class="quiet" type="button" hidden>下载构建报告</button>
+                </div>
+                <p id="log-empty" class="placeholder">构建日志将在这里显示</p>
+                <pre id="log" hidden></pre>
+            </div>
+            <div id="panel-artifacts" class="output-panel" role="tabpanel" aria-labelledby="tab-artifacts" tabindex="0" hidden>
+                <p id="artifacts-empty" class="placeholder">构建完成后可在这里下载产物</p>
+                <div id="artifacts"></div>
+            </div>
+        </section>
+    </section>
+</main>
+<footer><p id="message" role="status"></p></footer>
 </body>
 </html>

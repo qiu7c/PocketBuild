@@ -3,9 +3,13 @@
 #import "../Remote/DXRemoteNetwork.h"
 #import "../CompilerController.h"
 #import "../ArchiveImport.h"
+#import "../OutputNaming.h"
+#import "../SDKResources.h"
 #import "ScreenAwake.h"
 #import "Toolchains.h"
 #import "PackagePaths.h"
+#import "ProjectRecords.h"
+#import "../DocumentPresentation.h"
 #import <ifaddrs.h>
 #import <net/if.h>
 #import <errno.h>
@@ -13,6 +17,88 @@
 #import <Security/Security.h>
 
 NSNotificationName const PBTrialChanged = @"PocketBuild.TrialChanged";
+NSNotificationName const PBBuildChanged = @"PocketBuild.BuildChanged";
+NSNotificationName const PBConnectionChanged = @"PocketBuild.ConnectionChanged";
+
+static NSError *ProjectError(NSInteger code, NSString *message) {
+    return [NSError errorWithDomain:@"PocketBuild.Project" code:code
+        userInfo:@{NSLocalizedDescriptionKey:message}];
+}
+
+static NSString *ProjectFile(NSString *root, NSString *relative) {
+    if (!root || ![relative isKindOfClass:NSString.class] || !relative.length || relative.isAbsolutePath) return nil;
+    NSString *base = root.stringByResolvingSymlinksInPath;
+    NSString *target = [base stringByAppendingPathComponent:relative].stringByStandardizingPath.stringByResolvingSymlinksInPath;
+    if (![target hasPrefix:[base stringByAppendingString:@"/"]] ||
+        [target isEqual:[base stringByAppendingPathComponent:@".buildproject"]]) return nil;
+    return target;
+}
+
+static NSDictionary *InspectBuildProject(NSString *root, NSString *name, BOOL hasManifest, BOOL prepare, NSError **error) {
+    if (!hasManifest) {
+        for (NSString *file in [NSFileManager.defaultManager enumeratorAtPath:root]) {
+            if (![@[@"xcodeproj", @"xcworkspace", @"swift"] containsObject:file.pathExtension.lowercaseString]) continue;
+            if (error) *error = ProjectError(400, @"请为受支持的 C/C++、Objective-C 或 UIKit 工程添加 MobileCompiler.json。");
+            return nil;
+        }
+    }
+    return prepare ? TMCPrepareImportedProject(root, name, error) : TMCInspectImportedProject(root, name, error);
+}
+
+static NSDictionary *BuildSummary(NSDictionary *config, NSArray<NSString *> *sources) {
+    NSString *product = config[@"productType"] ?: @"tweak";
+    if (![@[@"app", @"tweak"] containsObject:product]) {
+        return @{@"issue":@{@"kind":@"configuration", @"message":@"productType 应为 tweak 或 app。", @"file":@"MobileCompiler.json"}};
+    }
+    NSUserDefaults *defaults = NSUserDefaults.standardUserDefaults;
+    NSError *error = nil;
+    NSDictionary *settings = TMCSDKBuildSettings(config, defaults, &error);
+    if (!settings) return @{@"issue":@{@"kind":@"configuration", @"message":error.localizedDescription, @"file":@"MobileCompiler.json"}};
+    NSString *sdk = settings[@"sdkVersion"];
+    BOOL usesCXX = NO;
+    if ([sdk isEqual:@"26.0"]) {
+        for (NSString *source in sources) {
+            if ([@[@"cpp", @"mm", @"xm"] containsObject:source.pathExtension.lowercaseString]) { usesCXX = YES; break; }
+        }
+    }
+    NSDictionary *options = TMCEffectiveBuildOptions(config, defaults);
+    NSMutableArray *outputs = [NSMutableArray array];
+    if ([product isEqual:@"app"]) {
+        [outputs addObject:@"IPA"];
+    } else {
+        if ([options[@"exportDylib"] boolValue]) [outputs addObject:@"dylib"];
+        if ([options[@"package"] boolValue]) {
+            NSDictionary *names = @{@"rootless":@"无根 DEB", @"rootful":@"有根 DEB", @"roothide":@"隐根 DEB"};
+            for (NSString *scheme in options[@"packageSchemes"]) [outputs addObject:names[scheme]];
+        }
+    }
+    NSMutableDictionary *summary = [@{@"productType":product, @"sdk":sdk, @"minimum":settings[@"deploymentTarget"],
+        @"cpu":config[@"cpuArchitecture"] ?: @"arm64", @"outputs":outputs} mutableCopy];
+    NSDictionary *labels = @{@"support":@"构建资源", @"sdk16":@"iOS 16.4 SDK", @"sdk26":@"iOS 26.0 SDK"};
+    NSMutableArray *missing = [NSMutableArray array];
+    for (NSString *required in [PBToolchains requiredPackagesForSDK:sdk usesCXX:usesCXX]) {
+        if (!PBInstalledPackage(required)) [missing addObject:@{@"id":required, @"title":labels[required]}];
+    }
+    if (missing.count) {
+        summary[@"issue"] = @{@"kind":@"components", @"components":missing, @"sdk":sdk, @"usesCXX":@(usesCXX),
+            @"message":[@"缺少 " stringByAppendingString:[[missing valueForKey:@"title"] componentsJoinedByString:@"、"]]};
+    }
+    return summary;
+}
+
+static NSArray<NSString *> *ProjectFiles(NSString *root) {
+    NSMutableArray *list = [NSMutableArray array];
+    NSDirectoryEnumerator *enumerator = [NSFileManager.defaultManager enumeratorAtPath:root];
+    for (NSString *relative in enumerator) {
+        NSString *type = enumerator.fileAttributes[NSFileType];
+        if ([relative isEqual:@".git"] || [relative hasPrefix:@".git/"] || [type isEqual:NSFileTypeSymbolicLink]) {
+            [enumerator skipDescendants];
+            continue;
+        }
+        if (![relative isEqual:@".buildproject"] && [type isEqual:NSFileTypeRegular]) [list addObject:relative];
+    }
+    return [list sortedArrayUsingSelector:@selector(compare:)];
+}
 
 @interface DXBuildService ()
 @property (nonatomic) DXRemoteHTTP *http;
@@ -23,6 +109,8 @@ NSNotificationName const PBTrialChanged = @"PocketBuild.TrialChanged";
 @property (nonatomic) NSMutableDictionary<NSString *, NSMutableDictionary *> *uploads;
 @property (nonatomic) BOOL activeCodeIsFixed;
 @property (nonatomic) NSDate *startedAt, *lastRequestAt;
+@property (nonatomic) NSDate *lastHTTPAt, *lastRejectedAt;
+@property (nonatomic) NSString *lastPeer, *requestedAddress;
 @property (nonatomic) NSUInteger requestCount;
 @property (nonatomic) BOOL trialRunning;
 @property (nonatomic) double trialProgress;
@@ -74,6 +162,176 @@ NSNotificationName const PBTrialChanged = @"PocketBuild.TrialChanged";
 }
 - (NSDictionary *)latestJob { return self.job ?: @{}; }
 
+- (NSDictionary *)connectionDiagnostics {
+    return @{@"listener":self.state, @"address":self.origin ?: self.requestedAddress ?: @"",
+        @"ready":@(self.startedAt != nil), @"httpAt":@(self.lastHTTPAt.timeIntervalSince1970),
+        @"authorizedAt":@(self.lastRequestAt.timeIntervalSince1970),
+        @"rejectedAt":@(self.lastRejectedAt.timeIntervalSince1970), @"peer":self.lastPeer ?: @""};
+}
+
+- (NSArray<NSDictionary *> *)recordedBuilds {
+    return [self.jobs.allValues sortedArrayUsingDescriptors:@[[NSSortDescriptor sortDescriptorWithKey:@"startedAt" ascending:NO]]];
+}
+
+- (NSDictionary *)recordedBuild:(NSString *)identifier {
+    return self.jobs[identifier];
+}
+
+- (NSArray<NSDictionary *> *)projectList {
+    NSMutableDictionary *recent = [NSMutableDictionary dictionary];
+    for (NSDictionary *job in self.recordedBuilds) {
+        NSString *identifier = job[@"project"];
+        if (identifier && !recent[identifier]) recent[identifier] = job[@"finishedAt"] ?: job[@"startedAt"];
+    }
+    NSMutableArray<NSDictionary *> *projects = [NSMutableArray array];
+    for (NSString *identifier in [NSFileManager.defaultManager contentsOfDirectoryAtPath:self.projects error:nil]) {
+        NSString *root = [self projectRoot:identifier];
+        if (!root) continue;
+        NSDictionary *metadata = [NSDictionary dictionaryWithContentsOfFile:[root stringByAppendingPathComponent:@".buildproject"]];
+        if (!metadata) continue;
+        NSDictionary *manifest = TMCDocumentJSON([root stringByAppendingPathComponent:@"MobileCompiler.json"]);
+        NSString *product = manifest.count ? ([manifest[@"productType"] isEqual:@"app"] ? @"app" : @"tweak") : (metadata[@"productType"] ?: @"tweak");
+        [projects addObject:@{@"id":identifier, @"name":metadata[@"name"] ?: identifier,
+            @"productType":product, @"lastBuildAt":recent[identifier] ?: @0}];
+    }
+    return [projects sortedArrayUsingDescriptors:@[[NSSortDescriptor sortDescriptorWithKey:@"lastBuildAt" ascending:NO],
+        [NSSortDescriptor sortDescriptorWithKey:@"name" ascending:YES selector:@selector(localizedStandardCompare:)]]];
+}
+
+- (NSString *)projectRoot:(NSString *)identifier {
+    if (!TMCDocumentUUID(identifier)) return nil;
+    NSString *root = [self.projects stringByAppendingPathComponent:identifier];
+    return TMCRegularDocument(root, YES) && TMCRegularDocument([root stringByAppendingPathComponent:@".buildproject"], NO) ? root : nil;
+}
+
+- (NSDictionary *)projectDetails:(NSString *)identifier {
+    NSString *root = [self projectRoot:identifier];
+    if (!root) return nil;
+    NSDictionary *metadata = [NSDictionary dictionaryWithContentsOfFile:[root stringByAppendingPathComponent:@".buildproject"]];
+    NSError *error = nil;
+    BOOL hasManifest = TMCRegularDocument(ProjectFile(root, @"MobileCompiler.json"), NO);
+    NSDictionary *inspection = InspectBuildProject(root, metadata[@"name"], hasManifest, NO, &error);
+    if (!inspection) {
+        NSMutableDictionary *issue = [@{@"kind":@"configuration", @"message":error.localizedDescription ?: @"无法读取项目配置。"} mutableCopy];
+        if (hasManifest) issue[@"file"] = @"MobileCompiler.json";
+        return @{@"issue":issue, @"hasManifest":@(hasManifest)};
+    }
+    NSMutableDictionary *config = [inspection[@"configuration"] mutableCopy];
+    if ([inspection[@"generatedManifest"] boolValue] && [metadata[@"productType"] isEqual:@"app"]) config[@"productType"] = @"app";
+    NSMutableDictionary *details = [BuildSummary(config, inspection[@"sources"]) mutableCopy];
+    details[@"hasManifest"] = @(hasManifest);
+    return details;
+}
+
+- (NSArray<NSString *> *)sourceFilesForProject:(NSString *)identifier {
+    NSString *root = [self projectRoot:identifier];
+    return root ? ProjectFiles(root) : @[];
+}
+
+- (NSString *)sourceForProject:(NSString *)identifier path:(NSString *)path error:(NSError **)error {
+    NSString *file = ProjectFile([self projectRoot:identifier], path);
+    if (!TMCRegularDocument(file, NO)) {
+        if (error) *error = ProjectError(404, @"源码文件不存在。");
+        return nil;
+    }
+    NSString *text = [NSString stringWithContentsOfFile:file encoding:NSUTF8StringEncoding error:nil];
+    if (!text && error) *error = ProjectError(400, @"该文件无法作为 UTF-8 文本打开。");
+    return text;
+}
+
+- (BOOL)saveSource:(NSString *)text forProject:(NSString *)identifier path:(NSString *)path expected:(NSString *)original error:(NSError **)error {
+    NSString *file = ProjectFile([self projectRoot:identifier], path);
+    NSString *current = TMCRegularDocument(file, NO) ? [NSString stringWithContentsOfFile:file encoding:NSUTF8StringEncoding error:nil] : nil;
+    if (![current isEqualToString:original]) {
+        if (error) *error = ProjectError(409, @"文件已在另一端改动或移除。可先复制本次修改，再重新打开最新源码。");
+        return NO;
+    }
+    if (![text writeToFile:file atomically:YES encoding:NSUTF8StringEncoding error:error]) return NO;
+    [NSNotificationCenter.defaultCenter postNotificationName:PBBuildChanged object:self];
+    return YES;
+}
+
+- (NSDictionary *)diagnosticSourceForBuild:(NSString *)identifier error:(NSError **)error {
+    NSDictionary *job = [self recordedBuild:identifier];
+    NSDictionary *issue = job[@"issue"] ?: (job[@"buildPath"] ? PBBuildIssue(job[@"buildPath"]) : nil);
+    NSString *relative = issue[@"file"];
+    NSString *file = ProjectFile([job[@"buildPath"] stringByAppendingPathComponent:@"snapshot"], relative);
+    NSString *snapshot = TMCRegularDocument(file, NO) ? [NSString stringWithContentsOfFile:file encoding:NSUTF8StringEncoding error:nil] : nil;
+    if (!snapshot) {
+        if (error) *error = ProjectError(404, @"该错误对应的源码快照不可用，可打开当前源码或查看完整日志。");
+        return nil;
+    }
+    NSString *current = [self sourceForProject:job[@"project"] path:relative error:nil];
+    return @{@"path":relative, @"text":snapshot, @"snapshot":@(![snapshot isEqualToString:current]),
+        @"currentAvailable":@(current != nil), @"line":issue[@"line"] ?: @1, @"column":issue[@"column"] ?: @0};
+}
+
+- (BOOL)renameProject:(NSString *)identifier name:(NSString *)name error:(NSError **)error {
+    NSString *root = [self projectRoot:identifier];
+    NSString *trimmed = [name isKindOfClass:NSString.class] ?
+        [name stringByTrimmingCharactersInSet:NSCharacterSet.whitespaceAndNewlineCharacterSet] : nil;
+    if (!root || !trimmed.length || trimmed.length > 120) {
+        if (error) *error = ProjectError(root ? 400 : 404, root ? @"项目名需要 1–120 个字符。" : @"项目不存在。");
+        return NO;
+    }
+    NSString *metadataPath = [root stringByAppendingPathComponent:@".buildproject"];
+    NSMutableDictionary *metadata = [[NSDictionary dictionaryWithContentsOfFile:metadataPath] mutableCopy];
+    metadata[@"name"] = trimmed;
+    if (![metadata writeToURL:[NSURL fileURLWithPath:metadataPath] error:error]) return NO;
+    [NSNotificationCenter.defaultCenter postNotificationName:PBBuildChanged object:self];
+    return YES;
+}
+
+- (BOOL)assignBuild:(NSString *)buildID toProject:(NSString *)identifier error:(NSError **)error {
+    NSString *root = [self projectRoot:identifier];
+    NSMutableDictionary *job = self.jobs[buildID];
+    if (!root || !job || [self projectRoot:job[@"project"]]) {
+        if (error) *error = ProjectError(409, @"请选择一个存在的项目和一条未归档记录。");
+        return NO;
+    }
+    NSMutableDictionary *updated = [job mutableCopy];
+    updated[@"project"] = identifier;
+    if (!PBWriteBuildJob(updated, error)) return NO;
+    [job addEntriesFromDictionary:updated];
+    [NSNotificationCenter.defaultCenter postNotificationName:PBBuildChanged object:self];
+    return YES;
+}
+
+- (BOOL)cleanOldBuildsForProject:(NSString *)identifier error:(NSError **)error {
+    if (PBToolchains.shared.buildRunning) {
+        if (error) *error = ProjectError(409, @"请等当前构建结束。");
+        return NO;
+    }
+    NSArray *jobs = [self.recordedBuilds filteredArrayUsingPredicate:
+        [NSPredicate predicateWithFormat:@"project == %@", identifier]];
+    NSMutableArray *removedPaths = [NSMutableArray array];
+    BOOL success = YES;
+    NSFileManager *files = NSFileManager.defaultManager;
+    for (NSDictionary *job in PBJobsToClean(jobs)) {
+        NSString *path = job[@"buildPath"];
+        if (!TMCRegularDocument(path, YES)) { [removedPaths addObject:path]; continue; }
+        NSString *name = TMCDocumentJSON([path stringByAppendingPathComponent:@".dylix-published-name.json"])[@"name"];
+        NSString *exports = [PBDocumentsDirectory() stringByAppendingPathComponent:@"构建产物"];
+        if (name.length && [name isEqual:name.lastPathComponent] && ![name hasPrefix:@"."] && TMCRegularDocument(exports, YES)) {
+            NSString *folder = [exports stringByAppendingPathComponent:name];
+            if (TMCRegularDocument(folder, YES)) {
+                NSArray *published = [PBBuildArtifacts(path) filteredArrayUsingPredicate:
+                    [NSPredicate predicateWithFormat:@"self ENDSWITH[c] '.deb' OR self ENDSWITH[c] '.dylib'"]];
+                for (NSString *exported in [published arrayByAddingObjectsFromArray:@[@"构建日志.txt", @"构建报告.json"]]) {
+                    NSString *copy = [folder stringByAppendingPathComponent:exported];
+                    if (TMCRegularDocument(copy, NO) && ![files removeItemAtPath:copy error:error]) { success = NO; break; }
+                }
+                if (!success) break;
+                if ([files contentsOfDirectoryAtPath:folder error:nil].count == 0) [files removeItemAtPath:folder error:nil];
+            }
+        }
+        if (![files removeItemAtPath:path error:error]) { success = NO; break; }
+        [removedPaths addObject:path];
+    }
+    [self discardBuildRecordsAtPaths:removedPaths];
+    return success;
+}
+
 - (BOOL)prepareCompiler:(NSError **)error {
     if (self.compiler) return YES;
     if (![PBToolchains.shared loadCompiler:error]) return NO;
@@ -81,6 +339,125 @@ NSNotificationName const PBTrialChanged = @"PocketBuild.TrialChanged";
     self.compiler = [controller new];
     [self.compiler loadViewIfNeeded];
     return YES;
+}
+
+- (NSDictionary *)startProjectBuild:(NSString *)identifier error:(NSError **)error {
+    PBToolchains *store = PBToolchains.shared;
+    if (store.buildRunning || store.busy) {
+        if (error) *error = ProjectError(409, store.buildRunning ? @"当前构建尚未结束。" : @"组件正在安装。");
+        return nil;
+    }
+    NSString *root = [self projectRoot:identifier];
+    if (!root) {
+        if (error) *error = ProjectError(404, @"项目不存在。");
+        return nil;
+    }
+
+    NSFileManager *files = NSFileManager.defaultManager;
+    NSString *buildID = NSUUID.UUID.UUIDString;
+    NSString *directory = [PBDocumentsDirectory() stringByAppendingPathComponent:[@"Build-" stringByAppendingString:buildID]];
+    if (![files createDirectoryAtPath:directory withIntermediateDirectories:NO attributes:nil error:error]) return nil;
+    TMCDocumentHide(directory);
+    NSDictionary *metadata = [NSDictionary dictionaryWithContentsOfFile:[root stringByAppendingPathComponent:@".buildproject"]];
+    NSMutableDictionary *job = [@{@"id":buildID, @"project":identifier, @"projectName":metadata[@"name"] ?: identifier,
+        @"state":@"running", @"buildPath":directory, @"artifacts":@[], @"startedAt":@(NSDate.date.timeIntervalSince1970)} mutableCopy];
+    if (!PBWriteBuildJob(job, error)) {
+        [files removeItemAtPath:directory error:nil];
+        return nil;
+    }
+    self.job = job;
+    self.jobs[buildID] = job;
+    NSString *snapshot = [directory stringByAppendingPathComponent:@"snapshot"];
+    NSError *failure = nil;
+    NSDictionary *issue = nil;
+
+    if (![files copyItemAtPath:root toPath:snapshot error:&failure]) {
+        [files removeItemAtPath:snapshot error:nil];
+        issue = @{@"kind":@"storage", @"message":failure.localizedDescription ?: @"无法保存源码快照。"};
+    } else {
+        NSString *manifest = [snapshot stringByAppendingPathComponent:@"MobileCompiler.json"];
+        BOOL hasManifest = [files fileExistsAtPath:manifest];
+        NSDictionary *prepared = InspectBuildProject(snapshot, job[@"projectName"], hasManifest, YES, &failure);
+        if (!prepared) {
+            NSMutableDictionary *problem = [@{@"kind":@"configuration", @"message":failure.localizedDescription ?: @"工程配置无法读取。"} mutableCopy];
+            if (hasManifest) problem[@"file"] = @"MobileCompiler.json";
+            issue = problem;
+        }
+        if (!issue) {
+            NSMutableDictionary *config = [prepared[@"configuration"] mutableCopy];
+            if (!hasManifest && [metadata[@"productType"] isEqual:@"app"]) {
+                config[@"productType"] = @"app";
+                config[@"productName"] = @"ImportedApp";
+                config[@"bundleIdentifier"] = [@"local.pocketbuild.app" stringByAppendingString:[identifier substringToIndex:8].lowercaseString];
+                config[@"package"] = @NO;
+                NSData *data = [NSJSONSerialization dataWithJSONObject:config options:0 error:&failure];
+                if (!data || ![data writeToFile:manifest options:NSDataWritingAtomic error:&failure]) {
+                    issue = @{@"kind":@"storage", @"message":failure.localizedDescription ?: @"无法写入构建配置。"};
+                }
+            }
+            if (!issue) {
+                NSDictionary *summary = BuildSummary(config, prepared[@"sources"]);
+                issue = summary[@"issue"];
+                job[@"productType"] = summary[@"productType"];
+                job[@"sdk"] = summary[@"sdk"];
+                job[@"cpu"] = summary[@"cpu"];
+            }
+            if (!hasManifest && (![issue[@"kind"] isEqual:@"storage"])) {
+                NSString *projectManifest = [root stringByAppendingPathComponent:@"MobileCompiler.json"];
+                if (![files fileExistsAtPath:projectManifest]) {
+                    [[NSData dataWithContentsOfFile:manifest] writeToFile:projectManifest options:NSDataWritingAtomic error:nil];
+                }
+            }
+        }
+    }
+    if (!issue && ![self prepareCompiler:&failure]) {
+        issue = @{@"kind":@"compiler", @"message":failure.localizedDescription ?: @"编译核心无法启动。"};
+    }
+    if (issue) {
+        job[@"state"] = @"failed";
+        job[@"issue"] = issue;
+        job[@"finishedAt"] = @(NSDate.date.timeIntervalSince1970);
+        PBWriteBuildJob(job, nil);
+        if (self.changed) self.changed();
+        [NSNotificationCenter.defaultCenter postNotificationName:PBBuildChanged object:self];
+        return job;
+    }
+
+    store.buildRunning = YES;
+    self.compiler.projectBuildDirectory = directory;
+    self.compiler.importedProject = snapshot;
+    self.compiler.importedSource = nil;
+    self.compiler.lastBuild = nil;
+    self.compiler.buildProgress = ^(NSString *stage, double progress) {
+        job[@"stage"] = stage ?: @"";
+        job[@"progress"] = @(progress);
+        [NSNotificationCenter.defaultCenter postNotificationName:PBBuildChanged object:nil];
+    };
+    __weak typeof(self) weak = self;
+    self.compiler.buildCompletion = ^(BOOL success) {
+        DXBuildService *service = weak;
+        BOOL cancelled = service.compiler.cancelRequested;
+        job[@"state"] = cancelled ? @"cancelled" : success ? @"succeeded" : @"failed";
+        job[@"finishedAt"] = @(NSDate.date.timeIntervalSince1970);
+        job[@"artifacts"] = PBBuildArtifacts(directory);
+        if (success && !cancelled) {
+            job[@"progress"] = @1;
+            job[@"stage"] = @"构建完成";
+        } else if (!cancelled) {
+            job[@"issue"] = PBBuildIssue(directory);
+        }
+        PBWriteBuildJob(job, nil);
+        service.compiler.projectBuildDirectory = nil;
+        service.compiler.importedProject = nil;
+        service.compiler.buildProgress = nil;
+        service.compiler.buildCompletion = nil;
+        store.buildRunning = NO;
+        if (service.changed) service.changed();
+        [NSNotificationCenter.defaultCenter postNotificationName:PBBuildChanged object:service];
+    };
+    [self.compiler runProof];
+    [NSNotificationCenter.defaultCenter postNotificationName:PBBuildChanged object:self];
+    return job;
 }
 
 - (BOOL)runTrialWithSDK:(NSString *)sdk usesCXX:(BOOL)usesCXX error:(NSError **)error {
@@ -203,6 +580,22 @@ NSNotificationName const PBTrialChanged = @"PocketBuild.TrialChanged";
     [NSNotificationCenter.defaultCenter postNotificationName:PBTrialChanged object:self];
 }
 
+- (void)cancelBuild {
+    if ([self.job[@"state"] isEqual:@"running"]) self.compiler.cancelRequested = YES;
+}
+
+- (void)discardBuildRecordsAtPaths:(NSArray<NSString *> *)paths {
+    for (NSString *identifier in self.jobs.allKeys) {
+        NSDictionary *job = self.jobs[identifier];
+        if (![paths containsObject:job[@"buildPath"] ?: @""]) continue;
+        if (job == self.job) self.job = nil;
+        [self.jobs removeObjectForKey:identifier];
+    }
+    if (!self.job) self.job = (NSMutableDictionary *)self.recordedBuilds.firstObject;
+    if (self.changed) self.changed();
+    [NSNotificationCenter.defaultCenter postNotificationName:PBBuildChanged object:self];
+}
+
 + (instancetype)shared {
     static DXBuildService *service;
     static dispatch_once_t once;
@@ -240,9 +633,14 @@ NSNotificationName const PBTrialChanged = @"PocketBuild.TrialChanged";
         _jobs = [NSMutableDictionary dictionary];
         _trialWorkspace = [NSTemporaryDirectory() stringByAppendingPathComponent:@"PocketBuild-Trial"].stringByStandardizingPath;
         [NSFileManager.defaultManager removeItemAtPath:_trialWorkspace error:nil];
-        NSString *documents = NSSearchPathForDirectoriesInDomains(NSDocumentDirectory, NSUserDomainMask, YES).firstObject;
+        NSString *documents = PBDocumentsDirectory();
         _projects = [documents stringByAppendingPathComponent:@"Projects"];
         [NSFileManager.defaultManager createDirectoryAtPath:_projects withIntermediateDirectories:YES attributes:nil error:nil];
+        for (NSString *path in PBStoredBuildDirectories()) {
+            NSDictionary *record = PBReadBuildJob(path);
+            if (record[@"id"]) _jobs[record[@"id"]] = [record mutableCopy];
+        }
+        _job = (NSMutableDictionary *)self.recordedBuilds.firstObject;
         _http = [[DXRemoteHTTP alloc] initWithQueue:dispatch_get_main_queue()];
         __weak typeof(self) weak = self;
         _http.handler = ^NSDictionary *(NSDictionary *request) {
@@ -250,7 +648,14 @@ NSNotificationName const PBTrialChanged = @"PocketBuild.TrialChanged";
         };
         _http.stateChanged = ^(NSString *state) {
             BOOL running = [state isEqual:@"running"];
-            weak.state = running ? @"运行中" : @"监听失败，请检查地址和端口";
+            NSError *error = weak.http.listenerError;
+            weak.state = running ? @"运行中" : error ?
+                [NSString stringWithFormat:@"监听失败 · %@ (%ld)", error.domain, (long)error.code] :
+                @"监听失败，请检查地址和端口";
+            if ([error.domain isEqual:NSPOSIXErrorDomain]) {
+                if (error.code == EADDRINUSE) weak.state = @"监听失败：端口已占用";
+                else if (error.code == EADDRNOTAVAIL) weak.state = @"监听失败：手机当前没有这个 IP 地址";
+            }
             if (running && !weak.startedAt) weak.startedAt = NSDate.date;
             if (!running) {
                 weak.origin = nil;
@@ -259,6 +664,7 @@ NSNotificationName const PBTrialChanged = @"PocketBuild.TrialChanged";
                 TFScreenAwakeSet(@"remote-build", NO);
             }
             if (weak.changed) weak.changed();
+            [NSNotificationCenter.defaultCenter postNotificationName:PBConnectionChanged object:weak];
         };
     }
     return self;
@@ -266,6 +672,7 @@ NSNotificationName const PBTrialChanged = @"PocketBuild.TrialChanged";
 
 - (void)startAddress:(NSString *)address port:(NSUInteger)port {
     [self stop];
+    self.requestedAddress = [NSString stringWithFormat:@"http://%@:%lu", address, (unsigned long)port];
     NSError *error = nil;
     self.activeCodeIsFixed = self.fixedCodeEnabled;
     NSString *code = self.activeCodeIsFixed ? self.fixedCode : [DXBuildService newConnectionCode:&error];
@@ -273,6 +680,7 @@ NSNotificationName const PBTrialChanged = @"PocketBuild.TrialChanged";
     if (!code) {
         self.state = error.localizedDescription ?: @"无法取得连接码";
         if (self.changed) self.changed();
+        [NSNotificationCenter.defaultCenter postNotificationName:PBConnectionChanged object:self];
         return;
     }
     if (![self.http startAddress:address port:port error:&error]) {
@@ -286,6 +694,7 @@ NSNotificationName const PBTrialChanged = @"PocketBuild.TrialChanged";
         TFScreenAwakeSet(@"remote-build", YES);
     }
     if (self.changed) self.changed();
+    [NSNotificationCenter.defaultCenter postNotificationName:PBConnectionChanged object:self];
 }
 
 - (void)stop {
@@ -297,9 +706,16 @@ NSNotificationName const PBTrialChanged = @"PocketBuild.TrialChanged";
     self.origin = nil;
     self.code = nil;
     self.startedAt = nil;
+    self.requestedAddress = nil;
+    self.lastHTTPAt = nil;
+    self.lastRequestAt = nil;
+    self.lastRejectedAt = nil;
+    self.lastPeer = nil;
+    self.requestCount = 0;
     self.state = @"已停止";
     TFScreenAwakeSet(@"remote-build", NO);
     if (self.changed) self.changed();
+    [NSNotificationCenter.defaultCenter postNotificationName:PBConnectionChanged object:self];
 }
 
 static NSDictionary *Failure(NSInteger status, NSString *message) {
@@ -308,20 +724,29 @@ static NSDictionary *Failure(NSInteger status, NSString *message) {
 
 - (NSDictionary *)handle:(NSDictionary *)request {
     NSString *route = request[@"path"], *method = request[@"method"];
-    if ([method isEqual:@"GET"] && [@[@"/", @"/app.js", @"/style.css"] containsObject:route]) {
+    self.lastHTTPAt = NSDate.date;
+    self.lastPeer = request[@"peer"];
+    if ([method isEqual:@"GET"] && [@[@"/", @"/app.js", @"/style.css", @"/brand.png"] containsObject:route]) {
+        if ([route isEqual:@"/"]) [NSNotificationCenter.defaultCenter postNotificationName:PBConnectionChanged object:self];
         NSString *name = [route isEqual:@"/"] ? @"index.html" : [route substringFromIndex:1];
         NSString *file = [NSBundle.mainBundle.bundlePath stringByAppendingPathComponent:
             [@"BuildWeb" stringByAppendingPathComponent:name]];
         NSString *type = [name hasSuffix:@".js"] ? @"application/javascript; charset=utf-8" :
-            [name hasSuffix:@".css"] ? @"text/css; charset=utf-8" : @"text/html; charset=utf-8";
+            [name hasSuffix:@".css"] ? @"text/css; charset=utf-8" :
+            [name hasSuffix:@".png"] ? @"image/png" : @"text/html; charset=utf-8";
         return @{@"status": @200, @"type": type, @"filePath": file};
     }
     NSString *authorization = request[@"headers"][@"authorization"];
     if (!self.code || ![authorization isEqual:[@"Bearer " stringByAppendingString:self.code]]) {
+        if ([route isEqual:@"/api/v1/workspace"] || authorization.length) {
+            self.lastRejectedAt = self.lastHTTPAt;
+            [NSNotificationCenter.defaultCenter postNotificationName:PBConnectionChanged object:self];
+        }
         return Failure(401, @"连接码无效，请查看手机上的当前连接码");
     }
     self.requestCount++;
     self.lastRequestAt = NSDate.date;
+    [NSNotificationCenter.defaultCenter postNotificationName:PBConnectionChanged object:self];
     NSURLComponents *components = [NSURLComponents componentsWithString:route];
     NSMutableDictionary *query = [NSMutableDictionary dictionary];
     for (NSURLQueryItem *item in components.queryItems) query[item.name] = item.value;
@@ -347,51 +772,67 @@ static NSDictionary *Failure(NSInteger status, NSString *message) {
             @"build":[NSBundle.mainBundle objectForInfoDictionaryKey:@"CFBundleVersion"],
             @"systemVersion":UIDevice.currentDevice.systemVersion,
             @"capabilities":@[@"tweak", @"app-uikit", @"chunked-upload", @"build-jobs"],
-            @"tools":PBToolchains.shared.status});
+            @"tools":PBToolchains.shared.status, @"connection":self.connectionDiagnostics});
     }
-    if ([action isEqual:@"projects"]) {
-        NSMutableArray *projects = [NSMutableArray array];
-        for (NSString *identifier in [files contentsOfDirectoryAtPath:self.projects error:nil]) {
-            if (![[NSUUID alloc] initWithUUIDString:identifier]) continue;
-            NSString *root = [self.projects stringByAppendingPathComponent:identifier];
-            NSDictionary *metadata = [NSDictionary dictionaryWithContentsOfFile:[root stringByAppendingPathComponent:@".buildproject"]];
-            [projects addObject:@{@"id": identifier, @"name": metadata[@"name"] ?: identifier}];
-        }
-        return DXRemoteResponse(200, @{@"projects": projects});
-    }
+    if ([action isEqual:@"projects"]) return DXRemoteResponse(200, @{@"projects":self.projectList});
     if ([action isEqual:@"create"]) {
-        NSString *name = body[@"name"];
-        if (![name isKindOfClass:NSString.class] || !name.length) return Failure(400, @"请填写项目名称");
+        NSString *name = [body[@"name"] isKindOfClass:NSString.class] ?
+            [body[@"name"] stringByTrimmingCharactersInSet:NSCharacterSet.whitespaceAndNewlineCharacterSet] : nil;
+        if (!name.length || name.length > 120) return Failure(400, @"项目名需要 1–120 个字符。");
         NSString *product = body[@"productType"] ?: @"tweak";
         if (![@[@"tweak", @"app"] containsObject:product]) return Failure(400, @"productType 应为 tweak 或 app");
         NSString *identifier = NSUUID.UUID.UUIDString;
         NSString *root = [self.projects stringByAppendingPathComponent:identifier];
         if (![files createDirectoryAtPath:root withIntermediateDirectories:NO attributes:nil error:&error]) return Failure(500, error.localizedDescription);
-        if ([product isEqual:@"app"]) {
+        if ([product isEqual:@"app"] && ![body[@"empty"] isEqual:@YES]) {
             NSString *template = [NSBundle.mainBundle.bundlePath stringByAppendingPathComponent:@"AppTemplate"];
             for (NSString *file in [files contentsOfDirectoryAtPath:template error:&error]) {
                 if (![files copyItemAtPath:[template stringByAppendingPathComponent:file] toPath:[root stringByAppendingPathComponent:file] error:&error]) break;
             }
             if (error) { [files removeItemAtPath:root error:nil]; return Failure(500, error.localizedDescription); }
         }
-        if (![@{@"name": name} writeToFile:[root stringByAppendingPathComponent:@".buildproject"] atomically:YES]) {
+        if (![@{@"name":name, @"productType":product} writeToFile:[root stringByAppendingPathComponent:@".buildproject"] atomically:YES]) {
             [files removeItemAtPath:root error:nil];
             return Failure(500, @"项目记录保存失败");
         }
-        return DXRemoteResponse(200, @{@"id": identifier, @"name": name});
+        [NSNotificationCenter.defaultCenter postNotificationName:PBBuildChanged object:self];
+        return DXRemoteResponse(200, @{@"id":identifier, @"name":name, @"productType":product});
     }
     if ([action isEqual:@"tools"]) return DXRemoteResponse(200, PBToolchains.shared.status);
     NSString *jobID = body[@"job_id"];
-    if (jobID && (![jobID isKindOfClass:NSString.class] || !self.jobs[jobID])) return Failure(404, @"构建任务不存在；任务编号在手机 App 重启后失效");
+    if (jobID && (![jobID isKindOfClass:NSString.class] || !self.jobs[jobID])) return Failure(404, @"构建记录不存在或已清理。");
     NSMutableDictionary *requestedJob = jobID ? self.jobs[jobID] : self.job;
     if ([action isEqual:@"job"]) {
+        if (!jobID && body[@"project"]) {
+            if (![self projectRoot:body[@"project"]]) return Failure(404, @"项目不存在。");
+            requestedJob = (NSMutableDictionary *)[[self.recordedBuilds filteredArrayUsingPredicate:
+                [NSPredicate predicateWithFormat:@"project == %@", body[@"project"]]] firstObject];
+        }
         NSMutableDictionary *job = [requestedJob mutableCopy] ?: [@{@"state": @"idle"} mutableCopy];
+        if ([self.job[@"state"] isEqual:@"running"]) job[@"activeJobId"] = self.job[@"id"];
         if (job[@"buildPath"]) {
             NSString *path = [job[@"buildPath"] stringByAppendingPathComponent:@"build.log"];
             job[@"log"] = [NSString stringWithContentsOfFile:path encoding:NSUTF8StringEncoding error:nil] ?: @"";
+            job[@"products"] = PBProductFiles(job[@"artifacts"]);
         }
         [job removeObjectForKey:@"buildPath"];
         return DXRemoteResponse(200, job);
+    }
+    if ([action isEqual:@"history"]) {
+        if (![self projectRoot:body[@"project"]]) return Failure(404, @"项目不存在。");
+        NSMutableArray *history = [NSMutableArray array];
+        for (NSDictionary *job in self.recordedBuilds) {
+            if (![job[@"project"] isEqual:body[@"project"]]) continue;
+            NSMutableDictionary *entry = [job mutableCopy];
+            [entry removeObjectForKey:@"buildPath"];
+            [history addObject:entry];
+        }
+        return DXRemoteResponse(200, @{@"builds":history});
+    }
+    if ([action isEqual:@"diagnostic_source"]) {
+        if (!jobID) return Failure(400, @"请选择构建记录");
+        NSDictionary *source = [self diagnosticSourceForBuild:jobID error:&error];
+        return source ? DXRemoteResponse(200, source) : Failure(error.code, error.localizedDescription);
     }
     if ([action isEqual:@"cancel"]) {
         if (![requestedJob[@"state"] isEqual:@"running"]) return DXRemoteResponse(200, @{@"state":requestedJob[@"state"] ?: @"idle"});
@@ -445,89 +886,37 @@ static NSDictionary *Failure(NSInteger status, NSString *message) {
     if (![identifier isKindOfClass:NSString.class] || ![[NSUUID alloc] initWithUUIDString:identifier]) {
         return Failure(400, @"请选择项目");
     }
-    NSString *root = [self.projects stringByAppendingPathComponent:identifier];
-    if (![files fileExistsAtPath:[root stringByAppendingPathComponent:@".buildproject"]]) return Failure(404, @"项目不存在");
+    NSString *root = [self projectRoot:identifier];
+    if (!root) return Failure(404, @"项目不存在");
+    if ([action isEqual:@"rename_project"]) {
+        if (![self renameProject:identifier name:body[@"name"] error:&error]) return Failure(
+            [error.domain isEqual:@"PocketBuild.Project"] ? error.code : 500, error.localizedDescription ?: @"无法保存项目名。");
+        return DXRemoteResponse(200, @{@"id":identifier, @"name":[body[@"name"] stringByTrimmingCharactersInSet:NSCharacterSet.whitespaceAndNewlineCharacterSet]});
+    }
     if ([action isEqual:@"files"]) {
-        NSMutableArray *list = [NSMutableArray array];
-        NSDirectoryEnumerator *enumerator = [files enumeratorAtPath:root];
-        for (NSString *relative in enumerator) {
-            NSDictionary *attributes = [files attributesOfItemAtPath:[root stringByAppendingPathComponent:relative] error:nil];
-            if ([relative isEqual:@".git"] || [relative hasPrefix:@".git/"] || [attributes[NSFileType] isEqual:NSFileTypeSymbolicLink]) {
-                [enumerator skipDescendants];
-                continue;
-            }
-            if ([relative isEqual:@".buildproject"] || ![attributes[NSFileType] isEqual:NSFileTypeRegular]) continue;
-            [list addObject:relative];
-        }
-        return DXRemoteResponse(200, @{@"files": [list sortedArrayUsingSelector:@selector(compare:)]});
+        NSUserDefaults *defaults = NSUserDefaults.standardUserDefaults;
+        NSDictionary *buildDefaults = @{
+            @"sdkVersion":[defaults stringForKey:@"StudioSDKVersion"] ?: @"16.4",
+            @"deploymentTarget":[defaults stringForKey:@"StudioDeploymentTarget"] ?: @"15.0",
+            @"exportDylib":[defaults objectForKey:@"StudioExportDylib"] ?: @YES,
+            @"package":[defaults objectForKey:@"StudioPackageEnabled"] ?: @YES,
+            @"packageSchemes":[defaults arrayForKey:@"StudioPackageSchemes"] ?: @[@"rootless"]
+        };
+        return DXRemoteResponse(200, @{@"files":ProjectFiles(root), @"buildDefaults":buildDefaults,
+            @"summary":[self projectDetails:identifier] ?: @{}});
     }
     if ([action isEqual:@"build"]) {
-        if (PBToolchains.shared.buildRunning) return Failure(409, @"当前构建尚未结束");
-        if (PBToolchains.shared.busy) return Failure(409, @"工具链正在安装，请稍后再构建");
-        NSString *manifest = [root stringByAppendingPathComponent:@"MobileCompiler.json"];
-        if (![files fileExistsAtPath:manifest]) {
-            for (NSString *file in [files enumeratorAtPath:root]) {
-                if ([@[@"xcodeproj", @"xcworkspace", @"swift"] containsObject:file.pathExtension.lowercaseString]) return Failure(400, @"此工程需要先配置 MobileCompiler.json。手机当前支持 Objective-C/C/C++ 和代码创建的 UIKit App；Swift 和完整 Xcode 工程构建尚未接入");
-            }
-        }
-        NSDictionary *prepared = TMCPrepareImportedProject(root, @"Plugin", &error);
-        if (!prepared) return Failure(400, error.localizedDescription);
-        NSDictionary *configuration = [NSJSONSerialization JSONObjectWithData:[NSData dataWithContentsOfFile:manifest] options:0 error:nil];
-        if (configuration[@"productType"] && ![@[@"app", @"tweak"] containsObject:configuration[@"productType"]]) return Failure(400, @"productType 应为 tweak 或 app");
-        NSString *sdk = configuration[@"sdkVersion"] ?: @"16.4";
-        BOOL usesCXX = NO;
-        if ([sdk isEqual:@"26.0"]) {
-            for (NSString *source in prepared[@"sources"]) {
-                if ([@[@"cpp", @"mm", @"xm"] containsObject:source.pathExtension.lowercaseString]) {
-                    usesCXX = YES;
-                    break;
-                }
-            }
-        }
-        NSMutableArray<NSString *> *missing = [NSMutableArray array];
-        NSDictionary *titles = @{@"support":@"构建资源", @"sdk16":@"iOS 16.4 SDK", @"sdk26":@"iOS 26.0 SDK"};
-        for (NSString *required in [PBToolchains requiredPackagesForSDK:sdk usesCXX:usesCXX]) {
-            if (!PBInstalledPackage(required)) [missing addObject:titles[required]];
-        }
-        if (missing.count) return Failure(409, [NSString stringWithFormat:@"请在手机组件库安装：%@。", [missing componentsJoinedByString:@"、"]]);
-        if (![self prepareCompiler:&error]) return Failure(409, error.localizedDescription);
-        NSString *copy = [NSTemporaryDirectory() stringByAppendingPathComponent:NSUUID.UUID.UUIDString];
-        if (![files copyItemAtPath:root toPath:copy error:&error]) return Failure(500, error.localizedDescription);
-        PBToolchains.shared.buildRunning = YES;
-        NSString *buildID = NSUUID.UUID.UUIDString;
-        self.job = [@{@"id":buildID, @"state": @"running", @"project": identifier, @"artifacts": @[], @"startedAt":@(NSDate.date.timeIntervalSince1970)} mutableCopy];
-        self.jobs[buildID] = self.job;
-        self.compiler.importedProject = copy;
-        self.compiler.importedSource = nil;
-        self.compiler.lastBuild = nil;
-        self.compiler.buildProgress = ^(NSString *stage, double progress) {
-            DXBuildService.shared.job[@"stage"] = stage ?: @"";
-            DXBuildService.shared.job[@"progress"] = @(progress);
-        };
-        self.compiler.buildCompletion = ^(BOOL success) {
-            DXBuildService *service = DXBuildService.shared;
-            service.job[@"state"] = service.compiler.cancelRequested ? @"cancelled" : success ? @"succeeded" : @"failed";
-            service.job[@"finishedAt"] = @(NSDate.date.timeIntervalSince1970);
-            if (success) { service.job[@"progress"]=@1; service.job[@"stage"]=@"构建完成"; }
-            PBToolchains.shared.buildRunning = NO;
-            NSMutableArray *artifacts = [NSMutableArray array];
-            for (NSString *name in [files contentsOfDirectoryAtPath:service.compiler.lastBuild error:nil]) {
-                if ([@[@"deb", @"dylib", @"ipa", @"json", @"log"] containsObject:name.pathExtension]) [artifacts addObject:name];
-            }
-            service.job[@"artifacts"] = artifacts;
-            [files removeItemAtPath:copy error:nil];
-            if (service.changed) service.changed();
-        };
-        [self.compiler runProof];
-        self.job[@"buildPath"] = self.compiler.lastBuild;
-        return DXRemoteResponse(200, @{@"id":buildID, @"state": self.job[@"state"]});
+        NSDictionary *result = [self startProjectBuild:identifier error:&error];
+        if (!result) return Failure([error.domain isEqual:@"PocketBuild.Project"] ? error.code : 500,
+            error.localizedDescription ?: @"无法创建构建记录。");
+        NSMutableDictionary *response = [result mutableCopy];
+        [response removeObjectForKey:@"buildPath"];
+        return DXRemoteResponse(200, response);
     }
 
     NSString *relative = body[@"path"];
-    if (![relative isKindOfClass:NSString.class] || !relative.length || relative.isAbsolutePath) return Failure(400, @"文件路径无效");
-    NSString *target = [root stringByAppendingPathComponent:relative].stringByResolvingSymlinksInPath;
-    if (![target hasPrefix:[root stringByAppendingString:@"/"]] ||
-        [target isEqual:[root stringByAppendingPathComponent:@".buildproject"]]) return Failure(400, @"文件路径超出项目");
+    NSString *target = ProjectFile(root, relative);
+    if (!target) return Failure(400, @"文件路径无效或超出项目");
     if ([action isEqual:@"upload_begin"]) {
         if (![files createDirectoryAtPath:target.stringByDeletingLastPathComponent
             withIntermediateDirectories:YES attributes:nil error:&error]) return Failure(500, error.localizedDescription);

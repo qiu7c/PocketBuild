@@ -18,3 +18,4 @@ BOOL TMCExtractDebPackage(NSURL *input, NSURL *destination,
 NSArray<NSDictionary *> *TMCArchiveProjects(NSString *root, NSProgress *cancellation, NSError **error);
 // Preserves an existing manifest; creates one for a plain source/Theos directory.
 NSDictionary *TMCPrepareImportedProject(NSString *root, NSString *fallbackName, NSError **error);
+NSDictionary *TMCInspectImportedProject(NSString *root, NSString *fallbackName, NSError **error);

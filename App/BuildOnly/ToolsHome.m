@@ -1,6 +1,7 @@
 #import "Toolchains.h"
 #import "Appearance.h"
 #import "BuildService.h"
+#import "Workspace.h"
 
 @interface PBToolsController : UIViewController
 @property UILabel *message, *coreLabel;
@@ -19,6 +20,8 @@
 @property NSDictionary *renderedInstalled;
 @property NSInteger renderedPurpose;
 @property NSMutableArray<UIButton *> *packageButtons;
+@property NSDictionary *buildIssue;
+@property NSString *retryProject;
 @end
 @implementation PBToolsController
 - (void)viewDidLoad {
@@ -28,7 +31,8 @@
     UIStackView *setup = PBCard();
     [setup addArrangedSubview:PBLabel(@"为你的构建准备组件", 18, UIFontWeightBold, UIColor.labelColor)];
     self.buildPurpose = [[UISegmentedControl alloc] initWithItems:@[@"常规", @"iOS 26", @"26 + C++"]];
-    self.buildPurpose.selectedSegmentIndex = 0;
+    self.buildPurpose.selectedSegmentIndex = [self.buildIssue[@"sdk"] isEqual:@"26.0"] ?
+        ([self.buildIssue[@"usesCXX"] boolValue] ? 2 : 1) : 0;
     self.buildPurpose.accessibilityLabel = @"构建用途";
     [self.buildPurpose addTarget:self action:@selector(refresh) forControlEvents:UIControlEventValueChanged];
     [setup addArrangedSubview:self.buildPurpose];
@@ -90,6 +94,18 @@
     }
 
     NSError *error = nil;
+    if (self.retryProject) {
+        NSDictionary *job = [DXBuildService.shared startProjectBuild:self.retryProject error:&error];
+        if (!job) {
+            PBShowError(self, error.localizedDescription ?: @"无法重新构建。");
+            return;
+        }
+        NSMutableArray *stack = [self.navigationController.viewControllers mutableCopy];
+        [stack removeLastObject];
+        [stack addObject:PBBuildResult(job[@"id"])];
+        [self.navigationController setViewControllers:stack animated:YES];
+        return;
+    }
     if (![DXBuildService.shared runTrialWithSDK:sdk usesCXX:usesCXX error:&error]) {
         PBShowError(self, error.localizedDescription ?: @"无法创建试编译工程。");
     }
@@ -133,21 +149,22 @@
         @"C++、Objective-C++ 和 Logos .xm 使用 26.0 SDK 时，三个组件都要装。16.4 SDK 提供兼容的 C++ 头文件。"
     ];
     self.requirementsLabel.text = descriptions[purpose];
-    self.buildPurpose.enabled = !store.busy && !service.trialRunning;
+    self.buildPurpose.enabled = !self.retryProject && !store.busy && !service.trialRunning;
     self.nextAction.enabled = !store.busy && !store.buildRunning && [status[@"compilerBundled"] boolValue];
     UIButtonConfiguration *action = self.nextAction.configuration;
     if (missing.count) {
         action.title = [NSString stringWithFormat:@"安装缺少的 %lu 项组件", (unsigned long)missing.count];
         action.image = [UIImage systemImageNamed:@"arrow.down.circle"];
     } else {
-        action.title = service.trialRunning ? @"正在试编译…" : @"试编译 UIKit 示例";
+        action.title = self.retryProject ? @"重新构建此项目" : service.trialRunning ? @"正在试编译…" : @"试编译 UIKit 示例";
         action.image = [UIImage systemImageNamed:@"hammer"];
     }
     self.nextAction.configuration = action;
     self.trialProgress.hidden = !service.trialRunning;
     self.trialProgress.progress = service.trialProgress;
     self.cancelTrialButton.hidden = !service.trialRunning;
-    self.trialLabel.text = service.trialMessage ?: (missing.count ? @"" : @"试编译将在本机生成一个示例 IPA，结束后自动清理。");
+    self.trialLabel.text = self.retryProject ? @"安装完成后可用该项目当前源码重新构建。" :
+        service.trialMessage ?: (missing.count ? @"" : @"试编译将在本机生成一个示例 IPA，结束后自动清理。");
     self.trialLabel.hidden = !self.trialLabel.text.length;
     self.coreLabel.text=[status[@"compilerBundled"] boolValue]?@"已包含在安装包中":@"安装包中未找到编译核心";
     self.sourceButton.enabled = !store.busy && !store.buildRunning;
@@ -192,3 +209,9 @@
 }
 @end
 UIViewController *PBToolsHome(void) { return [PBToolsController new]; }
+UIViewController *PBToolsForBuildIssue(NSDictionary *issue, NSString *project) {
+    PBToolsController *controller = [PBToolsController new];
+    controller.buildIssue = issue;
+    controller.retryProject = project;
+    return controller;
+}

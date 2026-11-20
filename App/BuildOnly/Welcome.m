@@ -2,6 +2,7 @@
 #import "Appearance.h"
 #import "BuildService.h"
 #import "Toolchains.h"
+#import "Workspace.h"
 
 @interface PBWelcomeController : UIViewController
 @property BOOL firstLaunch;
@@ -102,8 +103,16 @@
     UIScrollView *scroll=(UIScrollView *)self.content.superview;[scroll setContentOffset:CGPointMake(0,-scroll.adjustedContentInset.top) animated:NO];[self animateIntro];
 }
 - (void)finishWithoutSetup {
-    if(self.firstLaunch){[NSUserDefaults.standardUserDefaults setBool:YES forKey:@"PocketBuildWelcomeCompleted"];[self.navigationController setViewControllers:@[DXBuildHome()] animated:YES];}
-    else [self.navigationController popViewControllerAnimated:YES];
+    if (!self.firstLaunch) {
+        [self.navigationController popViewControllerAnimated:YES];
+        return;
+    }
+    [NSUserDefaults.standardUserDefaults setBool:YES forKey:@"PocketBuildWelcomeCompleted"];
+    UIWindow *window = self.view.window;
+    [UIView transitionWithView:window duration:UIAccessibilityIsReduceMotionEnabled() ? 0 : .25
+        options:UIViewAnimationOptionTransitionCrossDissolve animations:^{
+            window.rootViewController = PBWorkspace();
+        } completion:nil];
 }
 @end
 UIViewController *PBWelcomeScreen(BOOL firstLaunch) { PBWelcomeController *c=[PBWelcomeController new];c.firstLaunch=firstLaunch;c.page=firstLaunch?0:1;return c; }

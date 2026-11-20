@@ -22,3 +22,4 @@ FOUNDATION_EXPORT NSNotificationName const PBPackagesChanged;
 @end
 
 UIViewController *PBToolsHome(void);
+UIViewController *PBToolsForBuildIssue(NSDictionary *issue, NSString *project);

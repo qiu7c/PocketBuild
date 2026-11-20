@@ -248,7 +248,7 @@ NSArray<NSDictionary *> *TMCArchiveProjects(NSString *root, NSProgress *cancella
     return @[@{@"root":project,@"name":project.lastPathComponent,@"relative":[project isEqual:root]?@"压缩包根目录":[project substringFromIndex:root.length+1],@"sources":@(sources.count)}];
 }
 
-NSDictionary *TMCPrepareImportedProject(NSString *root, NSString *fallbackName, NSError **error) {
+static NSDictionary *PrepareImportedProject(NSString *root, NSString *fallbackName, BOOL writeManifest, NSError **error) {
     NSFileManager *fm=NSFileManager.defaultManager;NSString *manifest=[root stringByAppendingPathComponent:@"MobileCompiler.json"];
     BOOL existing=[fm fileExistsAtPath:manifest];
     NSMutableDictionary *config=existing?[ReadManifest(root,error) mutableCopy]:[NSMutableDictionary new];if(!config)return nil;
@@ -340,6 +340,14 @@ NSDictionary *TMCPrepareImportedProject(NSString *root, NSString *fallbackName, 
         config[@"package"]=@([fm fileExistsAtPath:[root stringByAppendingPathComponent:@"control"]]&&filterCount==1);
         config[@"collectErrors"]=@YES;
     }
-    if(!existing||needsSourceList){NSData *data=[NSJSONSerialization dataWithJSONObject:config options:NSJSONWritingPrettyPrinted error:error];if(!data||![data writeToFile:manifest options:NSDataWritingAtomic error:error])return nil;}
-    return @{@"sources":sources,@"name":[config[@"name"] isKindOfClass:NSString.class]?config[@"name"]:(fallbackName?:root.lastPathComponent),@"generatedManifest":@(!existing)};
+    if(writeManifest&&(!existing||needsSourceList)){NSData *data=[NSJSONSerialization dataWithJSONObject:config options:NSJSONWritingPrettyPrinted error:error];if(!data||![data writeToFile:manifest options:NSDataWritingAtomic error:error])return nil;}
+    return @{@"sources":sources,@"name":[config[@"name"] isKindOfClass:NSString.class]?config[@"name"]:(fallbackName?:root.lastPathComponent),@"generatedManifest":@(!existing),@"configuration":config};
+}
+
+NSDictionary *TMCPrepareImportedProject(NSString *root, NSString *fallbackName, NSError **error) {
+    return PrepareImportedProject(root, fallbackName, YES, error);
+}
+
+NSDictionary *TMCInspectImportedProject(NSString *root, NSString *fallbackName, NSError **error) {
+    return PrepareImportedProject(root, fallbackName, NO, error);
 }

@@ -44,6 +44,8 @@ python -m venv .venv
 | --- | --- |
 | connect_device | 检查连接、手机系统版本、构建组件安装状态 |
 | list_projects | 列出手机工程 |
+| rename_project | 修改指定项目的显示名称，保留项目 ID 和构建归属 |
+| list_builds | 根据 project_id 列出持久化的构建历史与失败原因 |
 | create_project | 新建工程，product_type 为 tweak 或 app；app 附带 UIKit 模板 |
 | list_project_files | 列出工程文件 |
 | upload_project | 将本地工作目录中的子目录上传到手机，可传 project_id 更新已有工程 |
@@ -68,7 +70,7 @@ download_artifacts({"job_id":"同一个 id","output_directory":"artifacts"})
 
 从模板开始时先 create_project({"name":"Demo","product_type":"app"})，再列出、读取和修改文件。上传已有工程会逐文件覆盖同名文件，不删除手机上的其他文件；完整替换工程时新建空工程后上传。上传本地 App 工程也可以直接使用 upload_project，它会新建空工程并采用上传的 MobileCompiler.json。
 
-返回状态包括 running、succeeded、failed、cancelled。只有构建完成后下载产物。失败时也可下载报告和日志。任务编号可区分本次启动 App 以来的多次构建，手机 App 重启后任务编号失效。产物仍保留在手机 Documents/Build-* 目录。
+返回状态包括 running、succeeded、failed、cancelled、interrupted。构建编号在手机 App 重启后仍可查询，记录按 project_id 归档，直到用户清理。缺少组件时 start_build 也会返回一条失败记录，issue.components 中列出所需项。编译错误的 issue 可包含 file、line 和 column。存在报告和日志时可在构建完成后下载对应文件。
 
 上传排除 .git、.theos、DerivedData、__pycache__ 和符号链接。本地上传和下载限制在 --workspace 内，局域网请求绕过 Windows 的 HTTP 代理。
 
@@ -89,5 +91,5 @@ download_artifacts({"job_id":"同一个 id","output_directory":"artifacts"})
 - 先用 Windows 浏览器打开手机显示的地址。浏览器也打不开时检查手机前台状态、选中的热点地址和 Windows 网络连接。
 - HTTP 401 表示连接码不匹配。随机模式重启服务后需要更新连接码；固定模式修改、保存并重启服务后更新。
 - 提示缺少 SDK 或构建资源时，在手机「管理组件」页面安装组件。
-- 指定任务返回 404 时检查是否使用了另一任务编号，或手机 App 是否重启。
+- 指定任务返回 404 时核对任务编号，或确认该构建是否已清理。
 - Build 6 已在 iOS 16.3.1 / TrollStore 环境通过热点局域网完成真实 MCP 联调，包括工程上传、原始 Logos 源码构建为 arm64 dylib/三种 DEB，以及日志和产物下载。插件宿主运行、普通证书及其他系统环境仍需验证。

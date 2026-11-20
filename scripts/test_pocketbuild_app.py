@@ -17,6 +17,13 @@ def main():
     sdk = subprocess.check_output(["xcrun", "--sdk", "iphoneos", "--show-sdk-path"], text=True).strip()
     with tempfile.TemporaryDirectory(prefix="pocketbuild-app-") as temporary:
         folder = Path(temporary)
+        records = folder / "ProjectTests"
+        subprocess.run(["xcrun", "--sdk", "macosx", "clang", "-fobjc-arc", "-fblocks", "-framework", "Foundation",
+                        "-framework", "CoreFoundation", "-larchive",
+                        str(ROOT / "tests/PocketBuildProjectTests.m"), str(ROOT / "App/BuildOnly/ProjectRecords.m"),
+                        str(ROOT / "App/ArchiveImport.m"), str(ROOT / "App/TheosMakefile.m"),
+                        "-o", str(records)], check=True)
+        subprocess.run([str(records), str(folder)], check=True)
         project, build = folder / "project", folder / "build"
         shutil.copytree(ROOT / "Resources/AppTemplate", project)
         build.mkdir()

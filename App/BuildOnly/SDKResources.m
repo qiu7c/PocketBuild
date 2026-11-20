@@ -8,6 +8,8 @@ NSDictionary *TMCSDKBuildSettings(NSDictionary *config, NSUserDefaults *defaults
     BOOL validMinimum = [minimum isKindOfClass:NSString.class] &&
         [minimum rangeOfString:@"^[0-9]{1,2}[.][0-9]{1,2}([.][0-9]{1,2})?$"
             options:NSRegularExpressionSearch].location != NSNotFound;
+    if (validSDK && validMinimum && !config[@"deploymentTarget"] &&
+        [minimum compare:sdk options:NSNumericSearch] == NSOrderedDescending) minimum = @"15.0";
     if (!validSDK || !validMinimum || [minimum compare:@"15.0" options:NSNumericSearch] == NSOrderedAscending ||
         [minimum compare:sdk options:NSNumericSearch] == NSOrderedDescending) {
         if (error) *error = [NSError errorWithDomain:@"PocketBuild.SDK" code:1
