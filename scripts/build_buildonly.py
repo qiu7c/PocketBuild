@@ -25,12 +25,13 @@ def compiler_source() -> str:
 
 def sdk_files(directory: Path):
     directory = directory.resolve()
+    repository = ROOT.resolve()
     tracked_links = set()
-    if (ROOT / ".git").exists() and directory.is_relative_to(ROOT):
+    if (repository / ".git").exists() and directory.is_relative_to(repository):
         # Git on Windows can check symbolic links out as small files containing the target path.
         index = subprocess.check_output(
-            ["git", "ls-files", "--stage", "-z", "--", directory.relative_to(ROOT).as_posix()], cwd=ROOT)
-        tracked_links = {ROOT / Path(entry.split("\t", 1)[1])
+            ["git", "ls-files", "--stage", "-z", "--", directory.relative_to(repository).as_posix()], cwd=repository)
+        tracked_links = {repository / Path(entry.split("\t", 1)[1])
                          for entry in index.decode("utf-8").split("\0") if entry.startswith("120000 ")}
 
     def resolve(relative: Path) -> Path:
