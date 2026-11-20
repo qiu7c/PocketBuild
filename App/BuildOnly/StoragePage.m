@@ -25,9 +25,12 @@
     self.checkpoints = [cache stringByAppendingPathComponent:@"DylixBuildCheckpoints"];
     UIStackView *content = PBPageContent(self.view, nil);
     UIStackView *summary = PBCard();
+    summary.spacing = 0;
+    summary.directionalLayoutMargins = NSDirectionalEdgeInsetsMake(6, 16, 6, 16);
     self.space = PBLabel(@"正在读取可用空间…", 14, UIFontWeightMedium, UIColor.secondaryLabelColor);
     [content addArrangedSubview:self.space];
     [content addArrangedSubview:summary];
+    [content setCustomSpacing:22 afterView:summary];
 
     NSArray *names = @[@"项目源码", @"历史构建", @"文件 App 中的产物副本", @"编译缓存", @"已下载组件"];
     NSMutableArray *sizes = [NSMutableArray array];
@@ -45,32 +48,33 @@
         [size setContentHuggingPriority:UILayoutPriorityDefaultHigh forAxis:UILayoutConstraintAxisHorizontal];
         [sizes addObject:size];
         UIStackView *row = [[UIStackView alloc] initWithArrangedSubviews:@[name, size]];
-        row.alignment = UIStackViewAlignmentFirstBaseline;
-        row.spacing = 10;
+        row.alignment = UIStackViewAlignmentCenter;
+        row.spacing = 14;
+        row.directionalLayoutMargins = NSDirectionalEdgeInsetsMake(12, 0, 12, 0);
+        row.layoutMarginsRelativeArrangement = YES;
+        [row.heightAnchor constraintGreaterThanOrEqualToConstant:44].active = YES;
         [summary addArrangedSubview:row];
     }
     self.sizes = sizes;
-    UIStackView *actions = PBCard();
-    actions.spacing = 0;
-    actions.directionalLayoutMargins = NSDirectionalEdgeInsetsMake(4, 16, 4, 16);
+    UIStackView *cleanup = PBCard();
+    cleanup.spacing = 8;
+    cleanup.directionalLayoutMargins = NSDirectionalEdgeInsetsMake(10, 16, 10, 16);
     self.clearHistory = PBLinkButton(@"清除历史构建", @"trash");
     self.clearHistory.enabled = NO;
     [self.clearHistory addTarget:self action:@selector(confirmHistory) forControlEvents:UIControlEventTouchUpInside];
     self.clearCache = PBLinkButton(@"清除编译缓存", @"trash");
     self.clearCache.enabled = NO;
     [self.clearCache addTarget:self action:@selector(removeCache) forControlEvents:UIControlEventTouchUpInside];
+    [cleanup addArrangedSubview:self.clearHistory];
+    [cleanup addArrangedSubview:self.clearCache];
+    [content addArrangedSubview:cleanup];
+
+    UIStackView *management = PBCard();
+    management.directionalLayoutMargins = NSDirectionalEdgeInsetsMake(8, 16, 8, 16);
     UIButton *components = PBLinkButton(@"管理组件", @"shippingbox");
     [components addTarget:self action:@selector(manageComponents) forControlEvents:UIControlEventTouchUpInside];
-    for (UIButton *action in @[self.clearHistory, self.clearCache, components]) {
-        if (actions.arrangedSubviews.count) {
-            UIView *separator = [UIView new];
-            separator.backgroundColor = UIColor.separatorColor;
-            [separator.heightAnchor constraintEqualToConstant:1.0 / UIScreen.mainScreen.scale].active = YES;
-            [actions addArrangedSubview:separator];
-        }
-        [actions addArrangedSubview:action];
-    }
-    [content addArrangedSubview:actions];
+    [management addArrangedSubview:components];
+    [content addArrangedSubview:management];
 }
 
 - (void)viewWillAppear:(BOOL)animated {

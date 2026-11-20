@@ -3,6 +3,8 @@
 #import "BuildService.h"
 #import "Toolchains.h"
 
+static const CGFloat PBTabBarBottomMargin = 7;
+
 UINavigationController *PBNavigation(UIViewController *root) {
     root.navigationItem.backButtonDisplayMode = UINavigationItemBackButtonDisplayModeMinimal;
     UINavigationBarAppearance *appearance = [UINavigationBarAppearance new];
@@ -63,9 +65,8 @@ UINavigationController *PBNavigation(UIViewController *root) {
 @property NSArray<UINavigationController *> *tabs;
 @property NSArray<PBTabButton *> *buttons;
 @property UINavigationController *current;
-@property UIStackView *bar;
+@property UIVisualEffectView *bar;
 @property NSLayoutConstraint *barHeight;
-@property NSLayoutConstraint *navigationBottom;
 - (void)showTab:(NSUInteger)index;
 @end
 
@@ -75,24 +76,35 @@ UINavigationController *PBNavigation(UIViewController *root) {
     self.view.backgroundColor = PBBackground();
     self.tabs = @[PBNavigation(DXBuildHome()), PBNavigation(PBBuildsHome()),
                   PBNavigation(PBToolsHome()), PBNavigation(PBSettingsHome())];
-    self.bar = [UIStackView new];
+    self.bar = [[UIVisualEffectView alloc] initWithEffect:nil];
     self.bar.translatesAutoresizingMaskIntoConstraints = NO;
-    self.bar.backgroundColor = UIColor.clearColor;
-    self.bar.axis = UILayoutConstraintAxisHorizontal;
-    self.bar.distribution = UIStackViewDistributionFillEqually;
-    self.bar.directionalLayoutMargins = NSDirectionalEdgeInsetsMake(4, 5, 4, 5);
-    self.bar.layoutMarginsRelativeArrangement = YES;
+    self.bar.layer.cornerCurve = kCACornerCurveContinuous;
+    self.bar.clipsToBounds = YES;
+    [self updateMaterial:nil];
+    [NSNotificationCenter.defaultCenter addObserver:self selector:@selector(updateMaterial:)
+                                               name:UIAccessibilityReduceTransparencyStatusDidChangeNotification object:nil];
     [self.view addSubview:self.bar];
-    self.barHeight = [self.bar.heightAnchor constraintEqualToConstant:66];
-    NSLayoutConstraint *barWidth = [self.bar.widthAnchor constraintEqualToConstant:310];
+    self.barHeight = [self.bar.heightAnchor constraintEqualToConstant:54];
+    NSLayoutConstraint *barWidth = [self.bar.widthAnchor constraintEqualToConstant:280];
     barWidth.priority = UILayoutPriorityDefaultHigh;
     [NSLayoutConstraint activateConstraints:@[
         self.barHeight, barWidth,
-        [self.bar.widthAnchor constraintLessThanOrEqualToAnchor:self.view.safeAreaLayoutGuide.widthAnchor constant:-48],
+        [self.bar.widthAnchor constraintLessThanOrEqualToAnchor:self.view.safeAreaLayoutGuide.widthAnchor constant:-56],
         [self.bar.centerXAnchor constraintEqualToAnchor:self.view.safeAreaLayoutGuide.centerXAnchor],
-        [self.bar.bottomAnchor constraintEqualToAnchor:self.view.safeAreaLayoutGuide.bottomAnchor constant:-7]
+        [self.bar.bottomAnchor constraintEqualToAnchor:self.view.safeAreaLayoutGuide.bottomAnchor constant:-PBTabBarBottomMargin]
     ]];
 
+    UIStackView *row = [UIStackView new];
+    row.translatesAutoresizingMaskIntoConstraints = NO;
+    row.axis = UILayoutConstraintAxisHorizontal;
+    row.distribution = UIStackViewDistributionFillEqually;
+    [self.bar.contentView addSubview:row];
+    [NSLayoutConstraint activateConstraints:@[
+        [row.leadingAnchor constraintEqualToAnchor:self.bar.contentView.leadingAnchor constant:6],
+        [row.trailingAnchor constraintEqualToAnchor:self.bar.contentView.trailingAnchor constant:-6],
+        [row.topAnchor constraintEqualToAnchor:self.bar.contentView.topAnchor],
+        [row.bottomAnchor constraintEqualToAnchor:self.bar.contentView.bottomAnchor]
+    ]];
     NSArray *names = @[@"工作台", @"构建", @"组件", @"设置"];
     NSArray *symbols = @[@"rectangle.grid.1x2", @"hammer", @"shippingbox", @"gearshape"];
     NSMutableArray *buttons = [NSMutableArray array];
@@ -100,11 +112,19 @@ UINavigationController *PBNavigation(UIViewController *root) {
         PBTabButton *button = [[PBTabButton alloc] initWithTitle:names[index] symbol:symbols[index]];
         button.tag = index;
         [button addTarget:self action:@selector(select:) forControlEvents:UIControlEventTouchUpInside];
-        [self.bar addArrangedSubview:button];
+        [row addArrangedSubview:button];
         [buttons addObject:button];
     }
     self.buttons = buttons;
     [self showTab:0];
+}
+
+- (void)dealloc { [NSNotificationCenter.defaultCenter removeObserver:self]; }
+
+- (void)updateMaterial:(NSNotification *)notification {
+    BOOL reduceTransparency = UIAccessibilityIsReduceTransparencyEnabled();
+    self.bar.effect = reduceTransparency ? nil : [UIBlurEffect effectWithStyle:UIBlurEffectStyleSystemUltraThinMaterial];
+    self.bar.backgroundColor = reduceTransparency ? UIColor.secondarySystemBackgroundColor : UIColor.clearColor;
 }
 
 - (void)traitCollectionDidChange:(UITraitCollection *)previous {
@@ -138,6 +158,7 @@ UINavigationController *PBNavigation(UIViewController *root) {
         [self.view insertSubview:next.view belowSubview:self.bar];
         [NSLayoutConstraint activateConstraints:@[
             [next.view.topAnchor constraintEqualToAnchor:self.view.topAnchor],
+            [next.view.bottomAnchor constraintEqualToAnchor:self.view.bottomAnchor],
             [next.view.leadingAnchor constraintEqualToAnchor:self.view.leadingAnchor],
             [next.view.trailingAnchor constraintEqualToAnchor:self.view.trailingAnchor]
         ]];
@@ -154,8 +175,9 @@ UINavigationController *PBNavigation(UIViewController *root) {
 - (void)updateBar {
     BOOL visible = self.current.viewControllers.count == 1;
     BOOL largeText = UIContentSizeCategoryIsAccessibilityCategory(self.traitCollection.preferredContentSizeCategory);
-    CGFloat height = largeText ? 74 : 66;
+    CGFloat height = largeText ? 66 : 54;
     self.barHeight.constant = height;
+    self.bar.layer.cornerRadius = height / 2;
     for (PBTabButton *button in self.buttons) {
         BOOL selected = self.tabs[button.tag] == self.current;
         UIColor *tint = selected ? PBAccent() : UIColor.secondaryLabelColor;
@@ -165,10 +187,27 @@ UINavigationController *PBNavigation(UIViewController *root) {
     }
     self.bar.hidden = !visible;
     self.bar.accessibilityElementsHidden = !visible;
-    self.navigationBottom.active = NO;
-    NSLayoutYAxisAnchor *bottom = visible ? self.bar.topAnchor : self.view.bottomAnchor;
-    self.navigationBottom = [self.current.view.bottomAnchor constraintEqualToAnchor:bottom constant:visible ? -12 : 0];
-    self.navigationBottom.active = YES;
+    if (!visible) return;
+
+    UIView *page = self.current.topViewController.view;
+    UIScrollView *scroll = nil;
+    if ([page isKindOfClass:UIScrollView.class]) {
+        scroll = (UIScrollView *)page;
+    } else {
+        for (UIView *child in page.subviews) {
+            if (![child isKindOfClass:UIScrollView.class]) continue;
+            scroll = (UIScrollView *)child;
+            break;
+        }
+    }
+    if (!scroll) return;
+    // Keep the end of the list scrollable above the floating material.
+    UIEdgeInsets contentInsets = scroll.contentInset;
+    contentInsets.bottom = height + PBTabBarBottomMargin + 8;
+    scroll.contentInset = contentInsets;
+    UIEdgeInsets indicatorInsets = scroll.verticalScrollIndicatorInsets;
+    indicatorInsets.bottom = contentInsets.bottom;
+    scroll.verticalScrollIndicatorInsets = indicatorInsets;
 }
 
 - (void)navigationController:(UINavigationController *)navigation
