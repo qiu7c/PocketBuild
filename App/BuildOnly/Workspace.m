@@ -63,7 +63,7 @@ UINavigationController *PBNavigation(UIViewController *root) {
 @property NSArray<UINavigationController *> *tabs;
 @property NSArray<PBTabButton *> *buttons;
 @property UINavigationController *current;
-@property UIVisualEffectView *bar;
+@property UIStackView *bar;
 @property NSLayoutConstraint *barHeight;
 @property NSLayoutConstraint *navigationBottom;
 - (void)showTab:(NSUInteger)index;
@@ -75,15 +75,13 @@ UINavigationController *PBNavigation(UIViewController *root) {
     self.view.backgroundColor = PBBackground();
     self.tabs = @[PBNavigation(DXBuildHome()), PBNavigation(PBBuildsHome()),
                   PBNavigation(PBToolsHome()), PBNavigation(PBSettingsHome())];
-    self.bar = [[UIVisualEffectView alloc] initWithEffect:nil];
+    self.bar = [UIStackView new];
     self.bar.translatesAutoresizingMaskIntoConstraints = NO;
-    self.bar.layer.cornerRadius = 30;
-    self.bar.layer.cornerCurve = kCACornerCurveContinuous;
-    self.bar.clipsToBounds = YES;
-    self.bar.layer.borderWidth = 1.0 / UIScreen.mainScreen.scale;
-    [self updateMaterial];
-    [NSNotificationCenter.defaultCenter addObserver:self selector:@selector(updateMaterial)
-        name:UIAccessibilityReduceTransparencyStatusDidChangeNotification object:nil];
+    self.bar.backgroundColor = UIColor.clearColor;
+    self.bar.axis = UILayoutConstraintAxisHorizontal;
+    self.bar.distribution = UIStackViewDistributionFillEqually;
+    self.bar.directionalLayoutMargins = NSDirectionalEdgeInsetsMake(4, 5, 4, 5);
+    self.bar.layoutMarginsRelativeArrangement = YES;
     [self.view addSubview:self.bar];
     self.barHeight = [self.bar.heightAnchor constraintEqualToConstant:66];
     NSLayoutConstraint *barWidth = [self.bar.widthAnchor constraintEqualToConstant:310];
@@ -95,18 +93,6 @@ UINavigationController *PBNavigation(UIViewController *root) {
         [self.bar.bottomAnchor constraintEqualToAnchor:self.view.safeAreaLayoutGuide.bottomAnchor constant:-7]
     ]];
 
-    UIStackView *row = [UIStackView new];
-    row.translatesAutoresizingMaskIntoConstraints = NO;
-    row.axis = UILayoutConstraintAxisHorizontal;
-    row.distribution = UIStackViewDistributionFillEqually;
-    row.spacing = 0;
-    [self.bar.contentView addSubview:row];
-    [NSLayoutConstraint activateConstraints:@[
-        [row.leadingAnchor constraintEqualToAnchor:self.bar.contentView.leadingAnchor constant:5],
-        [row.trailingAnchor constraintEqualToAnchor:self.bar.contentView.trailingAnchor constant:-5],
-        [row.topAnchor constraintEqualToAnchor:self.bar.contentView.topAnchor constant:4],
-        [row.bottomAnchor constraintEqualToAnchor:self.bar.contentView.bottomAnchor constant:-4]
-    ]];
     NSArray *names = @[@"工作台", @"构建", @"组件", @"设置"];
     NSArray *symbols = @[@"rectangle.grid.1x2", @"hammer", @"shippingbox", @"gearshape"];
     NSMutableArray *buttons = [NSMutableArray array];
@@ -114,26 +100,16 @@ UINavigationController *PBNavigation(UIViewController *root) {
         PBTabButton *button = [[PBTabButton alloc] initWithTitle:names[index] symbol:symbols[index]];
         button.tag = index;
         [button addTarget:self action:@selector(select:) forControlEvents:UIControlEventTouchUpInside];
-        [row addArrangedSubview:button];
+        [self.bar addArrangedSubview:button];
         [buttons addObject:button];
     }
     self.buttons = buttons;
     [self showTab:0];
 }
 
-- (void)dealloc { [NSNotificationCenter.defaultCenter removeObserver:self]; }
-
-- (void)updateMaterial {
-    BOOL reduce = UIAccessibilityIsReduceTransparencyEnabled();
-    self.bar.effect = reduce ? nil : [UIBlurEffect effectWithStyle:UIBlurEffectStyleSystemUltraThinMaterial];
-    self.bar.backgroundColor = reduce ? UIColor.secondarySystemGroupedBackgroundColor : UIColor.clearColor;
-    self.bar.layer.borderColor = [UIColor.separatorColor resolvedColorWithTraitCollection:self.traitCollection].CGColor;
-}
-
 - (void)traitCollectionDidChange:(UITraitCollection *)previous {
     [super traitCollectionDidChange:previous];
     if (!self.bar) return;
-    if ([self.traitCollection hasDifferentColorAppearanceComparedToTraitCollection:previous]) [self updateMaterial];
     if (![previous.preferredContentSizeCategory isEqual:self.traitCollection.preferredContentSizeCategory]) {
         [self updateBar];
     }

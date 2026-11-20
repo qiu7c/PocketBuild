@@ -100,6 +100,7 @@ static UIViewController *BuildResult(NSString *identifier, BOOL assign);
             [self addProjectActions:project jobs:groups[self.projectID]];
         } else {
             self.title = @"未归档";
+            self.navigationItem.rightBarButtonItem = nil;
         }
         NSArray *jobs = groups[self.projectID] ?: @[];
         [self.history addArrangedSubview:PBLabel(@"构建记录", 13, UIFontWeightMedium, UIColor.secondaryLabelColor)];
@@ -224,6 +225,11 @@ static UIViewController *BuildResult(NSString *identifier, BOOL assign);
         clean.attributes = UIMenuElementAttributesDestructive | (PBToolchains.shared.buildRunning ? UIMenuElementAttributesDisabled : 0);
         [menu addObject:clean];
     }
+    UIAction *remove = [UIAction actionWithTitle:@"删除项目" image:[UIImage systemImageNamed:@"trash"] identifier:nil
+        handler:^(UIAction *action) { [weak confirmProjectDeletion:project]; }];
+    remove.attributes = UIMenuElementAttributesDestructive;
+    if ([latest[@"state"] isEqual:@"running"]) remove.attributes |= UIMenuElementAttributesDisabled;
+    [menu addObject:remove];
     self.navigationItem.rightBarButtonItem = [[UIBarButtonItem alloc] initWithImage:[UIImage systemImageNamed:@"ellipsis.circle"]
         menu:[UIMenu menuWithChildren:menu]];
     self.navigationItem.rightBarButtonItem.accessibilityLabel = @"项目操作";
@@ -257,6 +263,24 @@ static UIViewController *BuildResult(NSString *identifier, BOOL assign);
         } else PBToast(weak, @"旧构建已清理");
     }]];
     [alert addAction:[UIAlertAction actionWithTitle:@"取消" style:UIAlertActionStyleCancel handler:nil]];
+    [self presentViewController:alert animated:YES completion:nil];
+}
+
+- (void)confirmProjectDeletion:(NSDictionary *)project {
+    NSString *title = [NSString stringWithFormat:@"删除「%@」？", project[@"name"]];
+    UIAlertController *alert = [UIAlertController alertControllerWithTitle:title
+        message:@"将删除手机上保存的项目源码和配置。已有构建记录可在「未归档」中查看或单独删除。"
+        preferredStyle:UIAlertControllerStyleAlert];
+    __weak typeof(self) weak = self;
+    [alert addAction:[UIAlertAction actionWithTitle:@"取消" style:UIAlertActionStyleCancel handler:nil]];
+    [alert addAction:[UIAlertAction actionWithTitle:@"删除项目" style:UIAlertActionStyleDestructive handler:^(UIAlertAction *action) {
+        NSError *error = nil;
+        if ([DXBuildService.shared deleteProject:project[@"id"] error:&error]) {
+            [weak.navigationController popViewControllerAnimated:YES];
+        } else {
+            PBShowError(weak, error.localizedDescription);
+        }
+    }]];
     [self presentViewController:alert animated:YES completion:nil];
 }
 
@@ -319,6 +343,7 @@ static UIViewController *BuildResult(NSString *identifier, BOOL assign);
 - (void)render:(NSDictionary *)job {
     UIStackView *content = self.content;
     for (UIView *child in content.arrangedSubviews) [child removeFromSuperview];
+    self.navigationItem.rightBarButtonItem = nil;
     if (!job) {
         [content addArrangedSubview:PBLabel(@"这次构建记录已移除。", 16, UIFontWeightMedium, UIColor.secondaryLabelColor)];
         return;
@@ -351,6 +376,10 @@ static UIViewController *BuildResult(NSString *identifier, BOOL assign);
         [summary addArrangedSubview:stop];
         return;
     }
+    UIBarButtonItem *remove = [[UIBarButtonItem alloc] initWithImage:[UIImage systemImageNamed:@"trash"]
+        style:UIBarButtonItemStylePlain target:self action:@selector(confirmBuildDeletion)];
+    remove.accessibilityLabel = @"删除记录";
+    self.navigationItem.rightBarButtonItem = remove;
     NSDictionary *issue = job[@"issue"];
     if (!issue && [job[@"state"] isEqual:@"failed"]) issue = PBBuildIssue(path);
     NSString *message = issue[@"message"] ?: report[@"packageError"];
@@ -362,7 +391,8 @@ static UIViewController *BuildResult(NSString *identifier, BOOL assign);
         [summary addArrangedSubview:PBLabel([parts componentsJoinedByString:@":"], 13, UIFontWeightSemibold, UIColor.labelColor)];
         NSString *source = [[path stringByAppendingPathComponent:@"snapshot"] stringByAppendingPathComponent:issue[@"file"]];
         BOOL available = TMCRegularDocument(source, NO);
-        if (available || job[@"project"]) {
+        if (available || (job[@"project"] &&
+            [DXBuildService.shared sourceForProject:job[@"project"] path:issue[@"file"] error:nil])) {
             UIButton *locate = PBButton(available ? @"定位源码" : @"打开当前源码", @"scope", YES);
             [locate addAction:[UIAction actionWithHandler:^(UIAction *action) {
                 if (available) PBOpenBuildSource(weakSelf, job[@"project"], job[@"id"]);
@@ -452,6 +482,23 @@ static UIViewController *BuildResult(NSString *identifier, BOOL assign);
     if (TMCRegularDocument(log, NO)) [self addShareButtonForFile:@"build.log" path:path to:technical title:@"分享完整日志" showName:NO];
     if (report.count) [self addShareButtonForFile:@"report.json" path:path to:technical title:@"分享构建报告" showName:NO];
     if (technical.arrangedSubviews.count > 1) [content addArrangedSubview:technical];
+}
+
+- (void)confirmBuildDeletion {
+    UIAlertController *alert = [UIAlertController alertControllerWithTitle:@"删除这条构建记录？"
+        message:@"将删除这次构建的日志、源码快照和内部产物。已导出或分享的文件会保留。"
+        preferredStyle:UIAlertControllerStyleAlert];
+    __weak typeof(self) weak = self;
+    [alert addAction:[UIAlertAction actionWithTitle:@"取消" style:UIAlertActionStyleCancel handler:nil]];
+    [alert addAction:[UIAlertAction actionWithTitle:@"删除记录" style:UIAlertActionStyleDestructive handler:^(UIAlertAction *action) {
+        NSError *error = nil;
+        if ([DXBuildService.shared deleteBuild:weak.buildID error:&error]) {
+            [weak.navigationController popViewControllerAnimated:YES];
+        } else {
+            PBShowError(weak, error.localizedDescription);
+        }
+    }]];
+    [self presentViewController:alert animated:YES completion:nil];
 }
 
 - (void)addShareButtonForFile:(NSString *)file path:(NSString *)path to:(UIStackView *)card title:(NSString *)title showName:(BOOL)showName {

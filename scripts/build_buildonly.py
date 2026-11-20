@@ -13,7 +13,7 @@ import zipfile
 
 ROOT = Path(__file__).resolve().parents[1]
 VERSION = "0.1.0"
-BUILD_NUMBER = "12"
+BUILD_NUMBER = "13"
 
 
 def compiler_source() -> str:

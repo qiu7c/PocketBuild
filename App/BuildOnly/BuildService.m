@@ -282,6 +282,37 @@ static NSArray<NSString *> *ProjectFiles(NSString *root) {
     return YES;
 }
 
+- (BOOL)deleteProject:(NSString *)identifier error:(NSError **)error {
+    NSString *root = [self projectRoot:identifier];
+    if (!root) {
+        if (error) *error = ProjectError(404, @"项目不存在。");
+        return NO;
+    }
+    if ([self.job[@"project"] isEqual:identifier] && [self.job[@"state"] isEqual:@"running"]) {
+        if (error) *error = ProjectError(409, @"请等该项目的构建结束。");
+        return NO;
+    }
+    if (![NSFileManager.defaultManager removeItemAtPath:root error:error]) return NO;
+    [NSNotificationCenter.defaultCenter postNotificationName:PBBuildChanged object:self];
+    return YES;
+}
+
+- (BOOL)deleteBuild:(NSString *)identifier error:(NSError **)error {
+    NSDictionary *job = [self recordedBuild:identifier];
+    if (!job) {
+        if (error) *error = ProjectError(404, @"构建记录不存在。");
+        return NO;
+    }
+    if ([job[@"state"] isEqual:@"running"]) {
+        if (error) *error = ProjectError(409, @"请等这次构建结束。");
+        return NO;
+    }
+    NSString *directory = job[@"buildPath"];
+    if (TMCRegularDocument(directory, YES) && ![NSFileManager.defaultManager removeItemAtPath:directory error:error]) return NO;
+    [self discardBuildRecordsAtPaths:@[directory]];
+    return YES;
+}
+
 - (BOOL)assignBuild:(NSString *)buildID toProject:(NSString *)identifier error:(NSError **)error {
     NSString *root = [self projectRoot:identifier];
     NSMutableDictionary *job = self.jobs[buildID];

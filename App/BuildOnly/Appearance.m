@@ -94,6 +94,18 @@ UIButton *PBLinkButton(NSString *title, NSString *symbol) {
     style.baseForegroundColor = UIColor.labelColor;
     style.contentInsets = NSDirectionalEdgeInsetsMake(8, 0, 8, 0);
     UIButton *button = PBConfiguredButton(style, title, symbol, UIFontWeightRegular);
+    UIImage *glyph = style.image;
+    CGSize column = CGSizeMake(22, 22);
+    CGFloat scale = MIN(1, 20 / MAX(glyph.size.width, glyph.size.height));
+    CGSize size = CGSizeMake(glyph.size.width * scale, glyph.size.height * scale);
+    CGRect glyphRect = CGRectMake((column.width - size.width) / 2, (column.height - size.height) / 2, size.width, size.height);
+    UIGraphicsImageRenderer *renderer = [[UIGraphicsImageRenderer alloc] initWithSize:column];
+    UIImage *alignedImage = [renderer imageWithActions:^(UIGraphicsImageRendererContext *context) {
+        [glyph drawInRect:glyphRect];
+    }];
+    style.image = [alignedImage imageWithRenderingMode:UIImageRenderingModeAlwaysTemplate];
+    style.imagePadding = 8;
+    button.configuration = style;
     button.contentHorizontalAlignment = UIControlContentHorizontalAlignmentLeading;
     return button;
 }

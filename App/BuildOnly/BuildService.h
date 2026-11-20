@@ -28,6 +28,8 @@ FOUNDATION_EXPORT NSNotificationName const PBConnectionChanged;
 - (NSDictionary *)diagnosticSourceForBuild:(NSString *)identifier error:(NSError **)error;
 - (NSDictionary *)startProjectBuild:(NSString *)identifier error:(NSError **)error;
 - (BOOL)renameProject:(NSString *)identifier name:(NSString *)name error:(NSError **)error;
+- (BOOL)deleteProject:(NSString *)identifier error:(NSError **)error;
+- (BOOL)deleteBuild:(NSString *)identifier error:(NSError **)error;
 - (BOOL)assignBuild:(NSString *)buildID toProject:(NSString *)identifier error:(NSError **)error;
 - (BOOL)cleanOldBuildsForProject:(NSString *)identifier error:(NSError **)error;
 @property (nonatomic, readonly) BOOL trialRunning;
