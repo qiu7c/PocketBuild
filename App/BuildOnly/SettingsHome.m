@@ -20,15 +20,22 @@ static UITableViewCell *SettingsCell(UITableView *table, NSIndexPath *index, NSS
         content.image = [UIImage systemImageNamed:symbol withConfiguration:
             [UIImageSymbolConfiguration configurationWithPointSize:16 weight:UIImageSymbolWeightRegular]];
         content.imageProperties.tintColor = PBAccent();
-        content.imageProperties.reservedLayoutSize = CGSizeMake(20, 20);
+        content.imageProperties.maximumSize = CGSizeMake(19, 19);
+        content.imageProperties.reservedLayoutSize = CGSizeMake(22, 22);
     }
-    content.imageToTextPadding = 11;
+    content.imageToTextPadding = 10;
     content.textToSecondaryTextVerticalPadding = 3;
     content.directionalLayoutMargins = NSDirectionalEdgeInsetsMake(10, 14, 10, 14);
     cell.contentConfiguration = content;
-    cell.separatorInset = UIEdgeInsetsMake(0, symbol ? 45 : 14, 0, 0);
-    cell.accessoryView = nil;
-    cell.accessoryType = UITableViewCellAccessoryDisclosureIndicator;
+    cell.separatorInset = UIEdgeInsetsMake(0, symbol ? 46 : 14, 0, 0);
+    UIImageView *disclosure = [[UIImageView alloc] initWithFrame:CGRectMake(0, 0, 18, 28)];
+    disclosure.image = [UIImage systemImageNamed:@"chevron.forward" withConfiguration:
+        [UIImageSymbolConfiguration configurationWithPointSize:11 weight:UIImageSymbolWeightSemibold]];
+    disclosure.contentMode = UIViewContentModeCenter;
+    disclosure.tintColor = UIColor.tertiaryLabelColor;
+    cell.accessoryType = UITableViewCellAccessoryNone;
+    cell.accessoryView = disclosure;
+    cell.accessibilityTraits |= UIAccessibilityTraitButton;
     cell.selectionStyle = UITableViewCellSelectionStyleDefault;
     return cell;
 }
@@ -40,8 +47,8 @@ static void SettingsSwitch(UITableViewCell *cell, NSString *title, BOOL on, NSIn
     control.accessibilityLabel = title;
     control.tag = tag;
     [control addTarget:target action:action forControlEvents:UIControlEventValueChanged];
-    cell.accessoryType = UITableViewCellAccessoryNone;
     cell.accessoryView = control;
+    cell.accessibilityTraits &= ~UIAccessibilityTraitButton;
     cell.selectionStyle = UITableViewCellSelectionStyleNone;
 }
 
@@ -180,6 +187,7 @@ static void SettingsSwitch(UITableViewCell *cell, NSString *title, BOOL on, NSIn
     [super viewDidLoad];
     self.title = @"设置";
     self.tableView.backgroundColor = PBBackground();
+    self.tableView.sectionHeaderTopPadding = 8;
     self.tableView.rowHeight = UITableViewAutomaticDimension;
     self.tableView.estimatedRowHeight = 54;
     [self.tableView registerClass:UITableViewCell.class forCellReuseIdentifier:@"setting"];
@@ -254,7 +262,7 @@ static void SettingsSwitch(UITableViewCell *cell, NSString *title, BOOL on, NSIn
 - (void)about {
     UIViewController *about = [UIViewController new];
     about.title = @"关于";
-    UIStackView *content = PBPageContent(about.view, about.view.bottomAnchor);
+    UIStackView *content = PBPageContent(about.view, nil);
     UIStackView *card = PBCard();
     card.alignment = UIStackViewAlignmentCenter;
     NSBundle *bundle = NSBundle.mainBundle;

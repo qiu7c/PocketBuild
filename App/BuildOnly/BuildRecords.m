@@ -24,7 +24,7 @@ static UIViewController *BuildResult(NSString *identifier, BOOL assign);
     [super viewDidLoad];
     self.title = self.projectID ? @"项目构建" : @"构建";
     self.navigationItem.backButtonDisplayMode = UINavigationItemBackButtonDisplayModeMinimal;
-    UIStackView *content = PBPageContent(self.view, self.view.bottomAnchor);
+    UIStackView *content = PBPageContent(self.view, nil);
     self.activeCard = PBCard();
     [self.activeCard addArrangedSubview:PBLabel(PBBuildStateTitle(@"running"), 16, UIFontWeightSemibold, UIColor.labelColor)];
     self.stage = PBLabel(@"", 14, UIFontWeightRegular, UIColor.secondaryLabelColor);
@@ -298,7 +298,7 @@ static UIViewController *BuildResult(NSString *identifier, BOOL assign);
     [super viewDidLoad];
     self.title = @"构建详情";
     self.navigationItem.largeTitleDisplayMode = UINavigationItemLargeTitleDisplayModeNever;
-    self.content = PBPageContent(self.view, self.view.bottomAnchor);
+    self.content = PBPageContent(self.view, nil);
     [NSNotificationCenter.defaultCenter addObserver:self selector:@selector(refresh) name:PBBuildChanged object:nil];
 }
 - (void)viewWillAppear:(BOOL)animated { [super viewWillAppear:animated]; [self refresh]; }
@@ -475,7 +475,7 @@ static UIViewController *BuildResult(NSString *identifier, BOOL assign);
     UIViewController *page = [UIViewController new];
     page.title = @"源码快照";
     page.navigationItem.largeTitleDisplayMode = UINavigationItemLargeTitleDisplayModeNever;
-    UIStackView *content = PBPageContent(page.view, page.view.bottomAnchor);
+    UIStackView *content = PBPageContent(page.view, nil);
     NSArray *extensions = @[@"m", @"mm", @"x", @"xm", @"c", @"cpp", @"h", @"hpp"];
     NSMutableArray<NSString *> *sources = [NSMutableArray array];
     for (NSString *relative in [NSFileManager.defaultManager enumeratorAtPath:snapshot]) {

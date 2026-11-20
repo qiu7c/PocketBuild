@@ -65,6 +65,7 @@ UINavigationController *PBNavigation(UIViewController *root) {
 @property UINavigationController *current;
 @property UIVisualEffectView *bar;
 @property NSLayoutConstraint *barHeight;
+@property NSLayoutConstraint *navigationBottom;
 - (void)showTab:(NSUInteger)index;
 @end
 
@@ -157,10 +158,10 @@ UINavigationController *PBNavigation(UIViewController *root) {
         }
         [previous.view removeFromSuperview];
         next.view.translatesAutoresizingMaskIntoConstraints = NO;
+        next.view.clipsToBounds = YES;
         [self.view insertSubview:next.view belowSubview:self.bar];
         [NSLayoutConstraint activateConstraints:@[
             [next.view.topAnchor constraintEqualToAnchor:self.view.topAnchor],
-            [next.view.bottomAnchor constraintEqualToAnchor:self.view.bottomAnchor],
             [next.view.leadingAnchor constraintEqualToAnchor:self.view.leadingAnchor],
             [next.view.trailingAnchor constraintEqualToAnchor:self.view.trailingAnchor]
         ]];
@@ -188,7 +189,10 @@ UINavigationController *PBNavigation(UIViewController *root) {
     }
     self.bar.hidden = !visible;
     self.bar.accessibilityElementsHidden = !visible;
-    self.current.additionalSafeAreaInsets = UIEdgeInsetsMake(0, 0, visible ? height + 10 : 0, 0);
+    self.navigationBottom.active = NO;
+    NSLayoutYAxisAnchor *bottom = visible ? self.bar.topAnchor : self.view.bottomAnchor;
+    self.navigationBottom = [self.current.view.bottomAnchor constraintEqualToAnchor:bottom constant:visible ? -12 : 0];
+    self.navigationBottom.active = YES;
 }
 
 - (void)navigationController:(UINavigationController *)navigation

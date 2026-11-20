@@ -27,7 +27,7 @@
 - (void)viewDidLoad {
     [super viewDidLoad];self.title=@"组件库";self.navigationItem.largeTitleDisplayMode=UINavigationItemLargeTitleDisplayModeNever;
     self.navigationItem.backButtonDisplayMode=UINavigationItemBackButtonDisplayModeMinimal;
-    UIStackView *content=PBPageContent(self.view,self.view.bottomAnchor);
+    UIStackView *content=PBPageContent(self.view,nil);
     UIStackView *setup = PBCard();
     [setup addArrangedSubview:PBLabel(@"构建用途", 15, UIFontWeightMedium, UIColor.labelColor)];
     self.buildPurpose = [[UISegmentedControl alloc] initWithItems:@[@"常规", @"iOS 26", @"26 + C++"]];
@@ -198,6 +198,8 @@
             [actions addArrangedSubview:install];[self.packageButtons addObject:install];
             if(ready) {
                 UIButton *more=PBButton(@"",@"ellipsis",NO);
+                more.accessibilityLabel = @"更多组件操作";
+                [more.widthAnchor constraintEqualToConstant:44].active = YES;
                 UIAction *remove=[UIAction actionWithTitle:@"移除组件" image:[UIImage systemImageNamed:@"trash"] identifier:nil handler:^(UIAction *a){NSError *error=nil;if(![store remove:identifier error:&error])PBShowError(weak,error.localizedDescription);}];
                 remove.attributes=UIMenuElementAttributesDestructive;more.menu=[UIMenu menuWithChildren:@[remove]];more.showsMenuAsPrimaryAction=YES;
                 [actions addArrangedSubview:more];[self.packageButtons addObject:more];

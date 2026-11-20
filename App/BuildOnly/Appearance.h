@@ -4,7 +4,7 @@ UIColor *PBAccent(void);
 UIFont *PBFont(CGFloat size, UIFontWeight weight);
 UILabel *PBLabel(NSString *text, CGFloat size, UIFontWeight weight, UIColor *color);
 UIStackView *PBCard(void);
-UIStackView *PBPageContent(UIView *view, NSLayoutYAxisAnchor *bottom);
+UIStackView *PBPageContent(UIView *view, NSLayoutYAxisAnchor * _Nullable bottom);
 UIButton *PBButton(NSString *title, NSString *symbol, BOOL primary);
 UIButton *PBLinkButton(NSString *title, NSString *symbol);
 UIView *PBFeature(NSString *symbol, NSString *title, NSString *detail);

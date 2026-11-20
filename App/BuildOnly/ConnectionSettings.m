@@ -13,7 +13,7 @@
     [super viewDidLoad];self.title=@"连接设置";self.navigationItem.largeTitleDisplayMode=UINavigationItemLargeTitleDisplayModeNever;
     self.navigationItem.backButtonDisplayMode=UINavigationItemBackButtonDisplayModeMinimal;
     self.navigationItem.rightBarButtonItem=[[UIBarButtonItem alloc] initWithTitle:@"保存" style:UIBarButtonItemStyleDone target:self action:@selector(save)];
-    UIStackView *content=PBPageContent(self.view,self.view.bottomAnchor);
+    UIStackView *content=PBPageContent(self.view,nil);
     UIStackView *network=PBCard();[network addArrangedSubview:PBFeature(@"network",@"局域网地址",@"选择手机的热点或 Wi-Fi 地址。")];
     self.addressField=[self field:@"手机 IPv4" text:[NSUserDefaults.standardUserDefaults stringForKey:@"BuildAddress"] keyboard:UIKeyboardTypeNumbersAndPunctuation secure:NO];
     [network addArrangedSubview:self.addressField];

@@ -23,7 +23,7 @@
     self.documents = NSSearchPathForDirectoriesInDomains(NSDocumentDirectory, NSUserDomainMask, YES).firstObject;
     NSString *cache = NSSearchPathForDirectoriesInDomains(NSCachesDirectory, NSUserDomainMask, YES).firstObject;
     self.checkpoints = [cache stringByAppendingPathComponent:@"DylixBuildCheckpoints"];
-    UIStackView *content = PBPageContent(self.view, self.view.bottomAnchor);
+    UIStackView *content = PBPageContent(self.view, nil);
     UIStackView *summary = PBCard();
     self.space = PBLabel(@"正在读取可用空间…", 14, UIFontWeightMedium, UIColor.secondaryLabelColor);
     [content addArrangedSubview:self.space];
@@ -39,6 +39,7 @@
             [summary addArrangedSubview:separator];
         }
         UILabel *name = PBLabel(names[index], 14, UIFontWeightRegular, UIColor.labelColor);
+        [name setContentCompressionResistancePriority:UILayoutPriorityDefaultLow forAxis:UILayoutConstraintAxisHorizontal];
         UILabel *size = PBLabel(@"计算中…", 13, UIFontWeightRegular, UIColor.secondaryLabelColor);
         size.textAlignment = NSTextAlignmentRight;
         [size setContentHuggingPriority:UILayoutPriorityDefaultHigh forAxis:UILayoutConstraintAxisHorizontal];
@@ -50,8 +51,8 @@
     }
     self.sizes = sizes;
     UIStackView *actions = PBCard();
-    actions.spacing = 2;
-    actions.layoutMargins = UIEdgeInsetsMake(4, 15, 4, 15);
+    actions.spacing = 0;
+    actions.directionalLayoutMargins = NSDirectionalEdgeInsetsMake(4, 16, 4, 16);
     self.clearHistory = PBLinkButton(@"清除历史构建", @"trash");
     self.clearHistory.enabled = NO;
     [self.clearHistory addTarget:self action:@selector(confirmHistory) forControlEvents:UIControlEventTouchUpInside];
@@ -60,7 +61,15 @@
     [self.clearCache addTarget:self action:@selector(removeCache) forControlEvents:UIControlEventTouchUpInside];
     UIButton *components = PBLinkButton(@"管理组件", @"shippingbox");
     [components addTarget:self action:@selector(manageComponents) forControlEvents:UIControlEventTouchUpInside];
-    for (UIButton *action in @[self.clearHistory, self.clearCache, components]) [actions addArrangedSubview:action];
+    for (UIButton *action in @[self.clearHistory, self.clearCache, components]) {
+        if (actions.arrangedSubviews.count) {
+            UIView *separator = [UIView new];
+            separator.backgroundColor = UIColor.separatorColor;
+            [separator.heightAnchor constraintEqualToConstant:1.0 / UIScreen.mainScreen.scale].active = YES;
+            [actions addArrangedSubview:separator];
+        }
+        [actions addArrangedSubview:action];
+    }
     [content addArrangedSubview:actions];
 }
 

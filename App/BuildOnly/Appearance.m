@@ -20,49 +20,80 @@ UILabel *PBLabel(NSString *text, CGFloat size, UIFontWeight weight, UIColor *col
     label.numberOfLines=0;label.adjustsFontForContentSizeCategory=YES;return label;
 }
 UIStackView *PBCard(void) {
-    UIStackView *card=[UIStackView new];card.axis=UILayoutConstraintAxisVertical;card.spacing=11;
-    card.layoutMargins=UIEdgeInsetsMake(15,15,15,15);card.layoutMarginsRelativeArrangement=YES;
-    card.backgroundColor=UIColor.secondarySystemGroupedBackgroundColor;card.layer.cornerRadius=16;
-    card.layer.cornerCurve=kCACornerCurveContinuous;return card;
+    UIStackView *card = [UIStackView new];
+    card.axis = UILayoutConstraintAxisVertical;
+    card.spacing = 12;
+    card.directionalLayoutMargins = NSDirectionalEdgeInsetsMake(16, 16, 16, 16);
+    card.layoutMarginsRelativeArrangement = YES;
+    card.backgroundColor = UIColor.secondarySystemGroupedBackgroundColor;
+    card.layer.cornerRadius = 16;
+    card.layer.cornerCurve = kCACornerCurveContinuous;
+    return card;
 }
 UIStackView *PBPageContent(UIView *view, NSLayoutYAxisAnchor *bottom) {
-    view.backgroundColor=PBBackground();
-    UIScrollView *scroll=[UIScrollView new];scroll.translatesAutoresizingMaskIntoConstraints=NO;
-    scroll.alwaysBounceVertical=YES;scroll.keyboardDismissMode=UIScrollViewKeyboardDismissModeOnDrag;
-    [view addSubview:scroll];UIStackView *stack=[UIStackView new];stack.axis=UILayoutConstraintAxisVertical;stack.spacing=14;
-    stack.translatesAutoresizingMaskIntoConstraints=NO;[scroll addSubview:stack];
+    view.backgroundColor = PBBackground();
+    UILayoutGuide *safeArea = view.safeAreaLayoutGuide;
+    UIScrollView *scroll = [UIScrollView new];
+    scroll.translatesAutoresizingMaskIntoConstraints = NO;
+    scroll.contentInsetAdjustmentBehavior = UIScrollViewContentInsetAdjustmentNever;
+    scroll.alwaysBounceVertical = YES;
+    scroll.keyboardDismissMode = UIScrollViewKeyboardDismissModeOnDrag;
+    [view addSubview:scroll];
+    UIStackView *stack = [UIStackView new];
+    stack.axis = UILayoutConstraintAxisVertical;
+    stack.spacing = 14;
+    stack.translatesAutoresizingMaskIntoConstraints = NO;
+    [scroll addSubview:stack];
+    UILayoutGuide *frame = scroll.frameLayoutGuide;
+    UILayoutGuide *content = scroll.contentLayoutGuide;
+    NSLayoutConstraint *preferredWidth = [stack.widthAnchor constraintEqualToAnchor:frame.widthAnchor constant:-32];
+    preferredWidth.priority = UILayoutPriorityDefaultHigh;
     [NSLayoutConstraint activateConstraints:@[
-        [scroll.topAnchor constraintEqualToAnchor:view.topAnchor],[scroll.leadingAnchor constraintEqualToAnchor:view.leadingAnchor],
-        [scroll.trailingAnchor constraintEqualToAnchor:view.trailingAnchor],[scroll.bottomAnchor constraintEqualToAnchor:bottom],
-        [stack.topAnchor constraintEqualToAnchor:scroll.contentLayoutGuide.topAnchor constant:14],
-        [stack.bottomAnchor constraintEqualToAnchor:scroll.contentLayoutGuide.bottomAnchor constant:-20],
-        [stack.leadingAnchor constraintEqualToAnchor:scroll.contentLayoutGuide.leadingAnchor constant:16],
-        [stack.trailingAnchor constraintEqualToAnchor:scroll.contentLayoutGuide.trailingAnchor constant:-16],
-        [stack.widthAnchor constraintEqualToAnchor:scroll.frameLayoutGuide.widthAnchor constant:-32]
-    ]];return stack;
+        [scroll.topAnchor constraintEqualToAnchor:safeArea.topAnchor],
+        [scroll.leadingAnchor constraintEqualToAnchor:safeArea.leadingAnchor],
+        [scroll.trailingAnchor constraintEqualToAnchor:safeArea.trailingAnchor],
+        [scroll.bottomAnchor constraintEqualToAnchor:bottom ?: safeArea.bottomAnchor],
+        [content.widthAnchor constraintEqualToAnchor:frame.widthAnchor],
+        [stack.topAnchor constraintEqualToAnchor:content.topAnchor constant:14],
+        [stack.bottomAnchor constraintEqualToAnchor:content.bottomAnchor constant:-16],
+        [stack.centerXAnchor constraintEqualToAnchor:content.centerXAnchor],
+        [stack.widthAnchor constraintLessThanOrEqualToAnchor:frame.widthAnchor constant:-32],
+        [stack.widthAnchor constraintLessThanOrEqualToConstant:640],
+        preferredWidth
+    ]];
+    return stack;
+}
+static UIButton *PBConfiguredButton(UIButtonConfiguration *config, NSString *title, NSString *symbol, UIFontWeight weight) {
+    UIButton *button = [UIButton buttonWithType:UIButtonTypeSystem];
+    config.title = title;
+    config.image = [UIImage systemImageNamed:symbol withConfiguration:
+        [UIImageSymbolConfiguration configurationWithPointSize:14 weight:UIImageSymbolWeightMedium]];
+    config.imagePadding = 6;
+    config.titleLineBreakMode = NSLineBreakByWordWrapping;
+    config.titleTextAttributesTransformer = ^NSDictionary<NSAttributedStringKey, id> *(NSDictionary<NSAttributedStringKey, id> *attributes) {
+        NSMutableDictionary *result = [attributes mutableCopy];
+        result[NSFontAttributeName] = PBFont(14, weight);
+        return result;
+    };
+    button.configuration = config;
+    NSLayoutConstraint *touchHeight = [button.heightAnchor constraintGreaterThanOrEqualToConstant:44];
+    touchHeight.priority = UILayoutPriorityDefaultHigh;
+    touchHeight.active = YES;
+    return button;
 }
 UIButton *PBButton(NSString *title, NSString *symbol, BOOL primary) {
-    UIButton *button=[UIButton buttonWithType:UIButtonTypeSystem];
-    UIButtonConfiguration *config=primary?UIButtonConfiguration.filledButtonConfiguration:UIButtonConfiguration.grayButtonConfiguration;
-    config.title=title;config.image=[UIImage systemImageNamed:symbol withConfiguration:
-        [UIImageSymbolConfiguration configurationWithPointSize:14 weight:UIImageSymbolWeightMedium]];config.imagePadding=6;
-    config.cornerStyle=UIButtonConfigurationCornerStyleMedium;config.contentInsets=NSDirectionalEdgeInsetsMake(10,12,10,12);
-    config.titleTextAttributesTransformer=^NSDictionary<NSAttributedStringKey,id> *(NSDictionary<NSAttributedStringKey,id> *attributes){
-        NSMutableDictionary *result=[attributes mutableCopy];result[NSFontAttributeName]=PBFont(14,primary?UIFontWeightSemibold:UIFontWeightMedium);return result;
-    };
-    if(primary)config.baseBackgroundColor=UIColor.labelColor;
-    config.baseForegroundColor=primary?UIColor.systemBackgroundColor:UIColor.labelColor;
-    button.configuration=config;
-    NSLayoutConstraint *touchHeight=[button.heightAnchor constraintGreaterThanOrEqualToConstant:44];
-    touchHeight.priority=UILayoutPriorityDefaultHigh;touchHeight.active=YES;return button;
+    UIButtonConfiguration *config = primary ? UIButtonConfiguration.filledButtonConfiguration : UIButtonConfiguration.grayButtonConfiguration;
+    config.cornerStyle = UIButtonConfigurationCornerStyleMedium;
+    config.contentInsets = NSDirectionalEdgeInsetsMake(10, 12, 10, 12);
+    if (primary) config.baseBackgroundColor = UIColor.labelColor;
+    config.baseForegroundColor = primary ? UIColor.systemBackgroundColor : UIColor.labelColor;
+    return PBConfiguredButton(config, title, symbol, primary ? UIFontWeightSemibold : UIFontWeightMedium);
 }
 UIButton *PBLinkButton(NSString *title, NSString *symbol) {
-    UIButton *button = PBButton(title, symbol, NO);
-    UIButtonConfiguration *style = button.configuration;
-    style.background = UIBackgroundConfiguration.clearConfiguration;
+    UIButtonConfiguration *style = UIButtonConfiguration.plainButtonConfiguration;
     style.baseForegroundColor = UIColor.labelColor;
     style.contentInsets = NSDirectionalEdgeInsetsMake(8, 0, 8, 0);
-    button.configuration = style;
+    UIButton *button = PBConfiguredButton(style, title, symbol, UIFontWeightRegular);
     button.contentHorizontalAlignment = UIControlContentHorizontalAlignmentLeading;
     return button;
 }

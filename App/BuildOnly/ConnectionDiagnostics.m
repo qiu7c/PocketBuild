@@ -17,7 +17,7 @@
     [super viewDidLoad];
     self.title = @"连接诊断";
     self.navigationItem.largeTitleDisplayMode = UINavigationItemLargeTitleDisplayModeNever;
-    UIStackView *content = PBPageContent(self.view, self.view.bottomAnchor);
+    UIStackView *content = PBPageContent(self.view, nil);
     UIStackView *checks = PBCard();
     [checks addArrangedSubview:PBFeature(@"antenna.radiowaves.left.and.right", @"手机服务", @"")];
     self.listener = PBLabel(@"", 14, UIFontWeightRegular, UIColor.secondaryLabelColor);

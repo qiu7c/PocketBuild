@@ -23,7 +23,7 @@
     self.navigationItem.rightBarButtonItem = [[UIBarButtonItem alloc] initWithImage:[UIImage systemImageNamed:@"slider.horizontal.3"]
         style:UIBarButtonItemStylePlain target:self action:@selector(settings)];
     self.navigationItem.rightBarButtonItem.accessibilityLabel = @"连接设置";
-    UIStackView *content = PBPageContent(self.view, self.view.bottomAnchor);
+    UIStackView *content = PBPageContent(self.view, nil);
 
     UIStackView *service = PBCard();
     UIStackView *status = [UIStackView new];
@@ -93,10 +93,12 @@
     self.connectionHelp = PBLinkButton(@"连接诊断", @"stethoscope");
     [self.connectionHelp addTarget:self action:@selector(diagnostics) forControlEvents:UIControlEventTouchUpInside];
     [service addArrangedSubview:self.connectionHelp];
+    UIButton *guide = PBLinkButton(@"连接指南", @"book.closed");
+    [guide addTarget:self action:@selector(guide) forControlEvents:UIControlEventTouchUpInside];
+    [service addArrangedSubview:guide];
     [content addArrangedSubview:service];
 
     UIStackView *job = PBCard();
-    job.spacing = 9;
     [job addArrangedSubview:PBLabel(@"最近构建", 12, UIFontWeightMedium, UIColor.secondaryLabelColor)];
     self.jobTitle = PBLabel(@"暂无构建记录", 16, UIFontWeightSemibold, UIColor.labelColor);
     self.jobDetail = PBLabel(@"", 13, UIFontWeightRegular, UIColor.secondaryLabelColor);
@@ -118,10 +120,6 @@
     [tools addTarget:self action:@selector(openTools) forControlEvents:UIControlEventTouchUpInside];
     [prepare addArrangedSubview:tools];
     [content addArrangedSubview:prepare];
-
-    UIButton *guide = PBLinkButton(@"连接指南", @"book.closed");
-    [guide addTarget:self action:@selector(guide) forControlEvents:UIControlEventTouchUpInside];
-    [content addArrangedSubview:guide];
 
     __weak typeof(self) weak = self;
     DXBuildService.shared.changed = ^{ [weak update]; };
