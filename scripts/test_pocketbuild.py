@@ -3,6 +3,7 @@ import importlib.util
 import json
 from pathlib import Path
 import plistlib
+import subprocess
 import tempfile
 import unittest
 from unittest.mock import patch
@@ -15,13 +16,49 @@ spec.loader.exec_module(build)
 
 
 class PocketBuildPackagingTests(unittest.TestCase):
-    def test_compiler_extraction(self):
+    def test_standalone_compiler_source(self):
         source = build.compiler_source()
         self.assertIn("PBCompilerFrameworks()", source)
         self.assertIn('PBInstalledPackage(@"support")', source)
         self.assertNotIn("TFAI", source)
         self.assertNotIn("UIApplicationMain", source)
+        self.assertIn('config[@"hiddenVisibility"]', source)
+        self.assertIn('addObject:@"-fvisibility=hidden"', source)
         self.assertTrue(source.rstrip().endswith("@end"))
+
+    def test_sdk_archive_resolves_framework_and_chained_aliases(self):
+        with tempfile.TemporaryDirectory() as folder:
+            root = Path(folder)
+            sdk = root / "Resources/SDK"
+            framework = "System/Library/Frameworks/"
+            cryptex = "System/Cryptexes/OS/System/Library/Frameworks/"
+            headers = sdk / (cryptex + "WebKit.framework/Headers")
+            headers.mkdir(parents=True)
+            (headers / "WebKit.h").write_text("SDK header")
+            (headers.parent / "WebKit.tbd").write_text("SDK link stub")
+            iokit = sdk / (framework + "IOKit.framework/Versions/A/Headers")
+            iokit.mkdir(parents=True)
+            (iokit / "IOKit.h").write_text("Versioned header")
+            subprocess.run(["git", "init", "--quiet", str(root)], check=True)
+            aliases = {
+                framework + "WebKit.framework": "../../../" + cryptex + "WebKit.framework",
+                framework + "IOKit.framework/Versions/Current": "A",
+                framework + "IOKit.framework/Headers": "Versions/Current/Headers",
+            }
+            for relative, destination in aliases.items():
+                (sdk / relative).write_text(destination, encoding="utf-8")
+                blob = subprocess.check_output(["git", "hash-object", "-w", "--stdin"],
+                    input=destination.encode(), cwd=root).decode().strip()
+                subprocess.run(["git", "update-index", "--add", "--cacheinfo",
+                    f"120000,{blob},Resources/SDK/{relative}"], cwd=root, check=True)
+            output = root / "sdk.zip"
+            with patch.object(build, "ROOT", root):
+                build.zip_directory(sdk, output, sdk=True)
+            with zipfile.ZipFile(output) as archive:
+                self.assertEqual(archive.read(framework + "WebKit.framework/Headers/WebKit.h"), b"SDK header")
+                self.assertEqual(archive.read(framework + "WebKit.framework/WebKit.tbd"), b"SDK link stub")
+                self.assertEqual(archive.read(framework + "IOKit.framework/Headers/IOKit.h"), b"Versioned header")
+                self.assertNotIn(framework + "WebKit.framework", archive.namelist())
 
     def test_one_ipa_embeds_core_and_exports_only_data_packages(self):
         original_root = build.ROOT
@@ -29,7 +66,7 @@ class PocketBuildPackagingTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as folder:
             root = Path(folder)
             (root / "App").mkdir()
-            (root / "App/main.m").write_text((original_root / "App/main.m").read_text(encoding="utf-8"), encoding="utf-8")
+            (root / "App/CompilerCore.m").write_text(build.compiler_source(), encoding="utf-8")
             for name in ("logos", "Include", "ClangInclude", "Perl", "VendorFrameworks", "CompatibilityRules", "SampleProject", "BuildWeb", "AppTemplate"):
                 path = root / "Resources" / name
                 path.mkdir(parents=True)
@@ -84,6 +121,7 @@ class PocketBuildPackagingTests(unittest.TestCase):
                 self.assertEqual({item["id"] for item in bundled["packages"]}, {"support", "sdk16", "sdk26"})
                 self.assertTrue(all(item["url"].startswith("https://") for item in bundled["packages"]))
                 self.assertEqual(info["CFBundleIdentifier"], "com.qiu7c.pocketbuild")
+                self.assertEqual(info["CFBundleVersion"], build.BUILD_NUMBER)
                 self.assertEqual(info["UIBackgroundModes"], ["audio"])
                 self.assertEqual(info["CFBundleIcons"]["CFBundlePrimaryIcon"]["CFBundleIconName"], "AppIcon")
                 self.assertEqual(plistlib.loads(archive.read("Payload/PocketBuild.app/commandDictionary.plist")), {})
@@ -95,6 +133,8 @@ class PocketBuildPackagingTests(unittest.TestCase):
                 self.assertEqual(len(item["sha256"]), 64)
                 self.assertTrue((output / "packages" / item["url"]).exists())
             app_command = next(cmd for cmd in commands if "clang" in cmd and "-dynamiclib" not in cmd)
+            compiler_command = next(cmd for cmd in commands if "-dynamiclib" in cmd)
+            self.assertIn(str(root / "App/CompilerCore.m"), compiler_command)
             self.assertFalse(any("/App/AI/" in part.replace("\\", "/") for part in app_command))
             signatures = [cmd[-1] for cmd in commands if cmd[0] == "codesign"]
             self.assertEqual(len(signatures), 7)

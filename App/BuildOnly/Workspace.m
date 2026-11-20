@@ -9,10 +9,9 @@ UINavigationController *PBNavigation(UIViewController *root) {
     [appearance configureWithOpaqueBackground];
     appearance.backgroundColor = PBBackground();
     appearance.shadowColor = UIColor.clearColor;
-    appearance.titleTextAttributes = @{NSFontAttributeName:PBFont(17, UIFontWeightSemibold), NSForegroundColorAttributeName:UIColor.labelColor};
-    appearance.largeTitleTextAttributes = @{NSFontAttributeName:PBFont(32, UIFontWeightBold), NSForegroundColorAttributeName:UIColor.labelColor};
+    appearance.titleTextAttributes = @{NSFontAttributeName:[UIFont systemFontOfSize:16 weight:UIFontWeightSemibold], NSForegroundColorAttributeName:UIColor.labelColor};
     UINavigationController *navigation = [[UINavigationController alloc] initWithRootViewController:root];
-    navigation.navigationBar.prefersLargeTitles = YES;
+    navigation.navigationBar.prefersLargeTitles = NO;
     navigation.navigationBar.tintColor = UIColor.labelColor;
     navigation.navigationBar.standardAppearance = appearance;
     navigation.navigationBar.scrollEdgeAppearance = appearance;
@@ -20,16 +19,52 @@ UINavigationController *PBNavigation(UIViewController *root) {
     return navigation;
 }
 
+@interface PBTabButton : UIButton
+@property UIImageView *glyph;
+@property UILabel *caption;
+- (instancetype)initWithTitle:(NSString *)title symbol:(NSString *)symbol;
+@end
+
+@implementation PBTabButton
+- (instancetype)initWithTitle:(NSString *)title symbol:(NSString *)symbol {
+    if ((self = [super initWithFrame:CGRectZero])) {
+        self.isAccessibilityElement = YES;
+        self.accessibilityLabel = title;
+        self.glyph = [[UIImageView alloc] initWithImage:[UIImage systemImageNamed:symbol withConfiguration:
+            [UIImageSymbolConfiguration configurationWithPointSize:19 weight:UIImageSymbolWeightMedium]]];
+        self.glyph.contentMode = UIViewContentModeCenter;
+        self.caption = [UILabel new];
+        self.caption.text = title;
+        self.caption.textAlignment = NSTextAlignmentCenter;
+        self.caption.font = [UIFont preferredFontForTextStyle:UIFontTextStyleCaption2];
+        self.caption.adjustsFontForContentSizeCategory = YES;
+        self.caption.adjustsFontSizeToFitWidth = YES;
+        self.caption.minimumScaleFactor = .65;
+
+        UIStackView *stack = [[UIStackView alloc] initWithArrangedSubviews:@[self.glyph, self.caption]];
+        stack.axis = UILayoutConstraintAxisVertical;
+        stack.spacing = 3;
+        stack.userInteractionEnabled = NO;
+        stack.accessibilityElementsHidden = YES;
+        stack.translatesAutoresizingMaskIntoConstraints = NO;
+        [self addSubview:stack];
+        [NSLayoutConstraint activateConstraints:@[
+            [self.glyph.heightAnchor constraintEqualToConstant:22],
+            [stack.centerYAnchor constraintEqualToAnchor:self.centerYAnchor],
+            [stack.leadingAnchor constraintEqualToAnchor:self.leadingAnchor constant:3],
+            [stack.trailingAnchor constraintEqualToAnchor:self.trailingAnchor constant:-3]
+        ]];
+    }
+    return self;
+}
+@end
+
 @interface PBWorkspaceController : UIViewController <UINavigationControllerDelegate>
 @property NSArray<UINavigationController *> *tabs;
-@property NSArray<UIButton *> *buttons;
+@property NSArray<PBTabButton *> *buttons;
 @property UINavigationController *current;
 @property UIVisualEffectView *bar;
 @property NSLayoutConstraint *barHeight;
-@property NSLayoutConstraint *barWidth;
-@property (weak) UIPanGestureRecognizer *observedPan;
-@property BOOL collapsed;
-@property CGFloat lastOffset;
 - (void)showTab:(NSUInteger)index;
 @end
 
@@ -39,31 +74,35 @@ UINavigationController *PBNavigation(UIViewController *root) {
     self.view.backgroundColor = PBBackground();
     self.tabs = @[PBNavigation(DXBuildHome()), PBNavigation(PBBuildsHome()),
                   PBNavigation(PBToolsHome()), PBNavigation(PBSettingsHome())];
-    self.bar = [[UIVisualEffectView alloc] initWithEffect:[UIBlurEffect effectWithStyle:UIBlurEffectStyleSystemThickMaterial]];
+    self.bar = [[UIVisualEffectView alloc] initWithEffect:nil];
     self.bar.translatesAutoresizingMaskIntoConstraints = NO;
-    self.bar.layer.cornerRadius = 29;
+    self.bar.layer.cornerRadius = 30;
     self.bar.layer.cornerCurve = kCACornerCurveContinuous;
     self.bar.clipsToBounds = YES;
+    self.bar.layer.borderWidth = 1.0 / UIScreen.mainScreen.scale;
+    [self updateMaterial];
+    [NSNotificationCenter.defaultCenter addObserver:self selector:@selector(updateMaterial)
+        name:UIAccessibilityReduceTransparencyStatusDidChangeNotification object:nil];
     [self.view addSubview:self.bar];
-    self.barHeight = [self.bar.heightAnchor constraintEqualToConstant:60];
-    self.barWidth = [self.bar.widthAnchor constraintEqualToConstant:372];
-    self.barWidth.priority = UILayoutPriorityDefaultHigh;
+    self.barHeight = [self.bar.heightAnchor constraintEqualToConstant:66];
+    NSLayoutConstraint *barWidth = [self.bar.widthAnchor constraintEqualToConstant:310];
+    barWidth.priority = UILayoutPriorityDefaultHigh;
     [NSLayoutConstraint activateConstraints:@[
-        self.barHeight, self.barWidth,
-        [self.bar.widthAnchor constraintLessThanOrEqualToAnchor:self.view.safeAreaLayoutGuide.widthAnchor constant:-24],
+        self.barHeight, barWidth,
+        [self.bar.widthAnchor constraintLessThanOrEqualToAnchor:self.view.safeAreaLayoutGuide.widthAnchor constant:-48],
         [self.bar.centerXAnchor constraintEqualToAnchor:self.view.safeAreaLayoutGuide.centerXAnchor],
-        [self.bar.bottomAnchor constraintEqualToAnchor:self.view.safeAreaLayoutGuide.bottomAnchor constant:-8]
+        [self.bar.bottomAnchor constraintEqualToAnchor:self.view.safeAreaLayoutGuide.bottomAnchor constant:-7]
     ]];
 
     UIStackView *row = [UIStackView new];
     row.translatesAutoresizingMaskIntoConstraints = NO;
     row.axis = UILayoutConstraintAxisHorizontal;
     row.distribution = UIStackViewDistributionFillEqually;
-    row.spacing = 3;
+    row.spacing = 0;
     [self.bar.contentView addSubview:row];
     [NSLayoutConstraint activateConstraints:@[
-        [row.leadingAnchor constraintEqualToAnchor:self.bar.contentView.leadingAnchor constant:6],
-        [row.trailingAnchor constraintEqualToAnchor:self.bar.contentView.trailingAnchor constant:-6],
+        [row.leadingAnchor constraintEqualToAnchor:self.bar.contentView.leadingAnchor constant:5],
+        [row.trailingAnchor constraintEqualToAnchor:self.bar.contentView.trailingAnchor constant:-5],
         [row.topAnchor constraintEqualToAnchor:self.bar.contentView.topAnchor constant:4],
         [row.bottomAnchor constraintEqualToAnchor:self.bar.contentView.bottomAnchor constant:-4]
     ]];
@@ -71,21 +110,7 @@ UINavigationController *PBNavigation(UIViewController *root) {
     NSArray *symbols = @[@"rectangle.grid.1x2", @"hammer", @"shippingbox", @"gearshape"];
     NSMutableArray *buttons = [NSMutableArray array];
     for (NSUInteger index = 0; index < names.count; index++) {
-        UIButton *button = [UIButton buttonWithType:UIButtonTypeSystem];
-        UIButtonConfiguration *configuration = UIButtonConfiguration.plainButtonConfiguration;
-        configuration.image = [UIImage systemImageNamed:symbols[index] withConfiguration:
-            [UIImageSymbolConfiguration configurationWithPointSize:19 weight:UIImageSymbolWeightMedium]];
-        configuration.imagePlacement = NSDirectionalRectEdgeTop;
-        configuration.imagePadding = 3;
-        configuration.contentInsets = NSDirectionalEdgeInsetsMake(0, 0, 0, 0);
-        configuration.cornerStyle = UIButtonConfigurationCornerStyleCapsule;
-        configuration.titleTextAttributesTransformer = ^NSDictionary *(NSDictionary *attributes) {
-            NSMutableDictionary *updated = [attributes mutableCopy];
-            updated[NSFontAttributeName] = [UIFont systemFontOfSize:11 weight:UIFontWeightSemibold];
-            return updated;
-        };
-        button.configuration = configuration;
-        button.accessibilityLabel = names[index];
+        PBTabButton *button = [[PBTabButton alloc] initWithTitle:names[index] symbol:symbols[index]];
         button.tag = index;
         [button addTarget:self action:@selector(select:) forControlEvents:UIControlEventTouchUpInside];
         [row addArrangedSubview:button];
@@ -93,6 +118,24 @@ UINavigationController *PBNavigation(UIViewController *root) {
     }
     self.buttons = buttons;
     [self showTab:0];
+}
+
+- (void)dealloc { [NSNotificationCenter.defaultCenter removeObserver:self]; }
+
+- (void)updateMaterial {
+    BOOL reduce = UIAccessibilityIsReduceTransparencyEnabled();
+    self.bar.effect = reduce ? nil : [UIBlurEffect effectWithStyle:UIBlurEffectStyleSystemUltraThinMaterial];
+    self.bar.backgroundColor = reduce ? UIColor.secondarySystemGroupedBackgroundColor : UIColor.clearColor;
+    self.bar.layer.borderColor = [UIColor.separatorColor resolvedColorWithTraitCollection:self.traitCollection].CGColor;
+}
+
+- (void)traitCollectionDidChange:(UITraitCollection *)previous {
+    [super traitCollectionDidChange:previous];
+    if (!self.bar) return;
+    if ([self.traitCollection hasDifferentColorAppearanceComparedToTraitCollection:previous]) [self updateMaterial];
+    if (![previous.preferredContentSizeCategory isEqual:self.traitCollection.preferredContentSizeCategory]) {
+        [self updateBar];
+    }
 }
 
 - (void)select:(UIButton *)button { [self showTab:(NSUInteger)button.tag]; }
@@ -128,69 +171,35 @@ UINavigationController *PBNavigation(UIViewController *root) {
         [previous removeFromParentViewController];
         [next didMoveToParentViewController:self];
     }
-    [self updateBar:NO animated:NO];
-    [self observeScrolling:next.topViewController];
+    [self updateBar];
 }
 
-- (void)updateBar:(BOOL)collapsed animated:(BOOL)animated {
-    self.collapsed = collapsed;
+- (void)updateBar {
     BOOL visible = self.current.viewControllers.count == 1;
-    self.barHeight.constant = collapsed ? 48 : 60;
-    self.barWidth.constant = collapsed ? 260 : 372;
-    for (UIButton *button in self.buttons) {
+    BOOL largeText = UIContentSizeCategoryIsAccessibilityCategory(self.traitCollection.preferredContentSizeCategory);
+    CGFloat height = largeText ? 74 : 66;
+    self.barHeight.constant = height;
+    for (PBTabButton *button in self.buttons) {
         BOOL selected = self.tabs[button.tag] == self.current;
-        UIButtonConfiguration *configuration = button.configuration;
-        configuration.title = collapsed ? nil : button.accessibilityLabel;
-        configuration.baseForegroundColor = selected ? UIColor.labelColor : UIColor.secondaryLabelColor;
-        configuration.background.backgroundColor = selected ? UIColor.tertiarySystemFillColor : UIColor.clearColor;
-        button.configuration = configuration;
+        UIColor *tint = selected ? PBAccent() : UIColor.secondaryLabelColor;
+        button.caption.textColor = tint;
+        button.glyph.tintColor = tint;
         button.accessibilityTraits = UIAccessibilityTraitButton | (selected ? UIAccessibilityTraitSelected : 0);
     }
-    self.bar.userInteractionEnabled = visible;
+    self.bar.hidden = !visible;
     self.bar.accessibilityElementsHidden = !visible;
-    [UIView animateWithDuration:animated && !UIAccessibilityIsReduceMotionEnabled() ? .24 : 0 animations:^{
-        self.bar.alpha = visible ? 1 : 0;
-        self.current.additionalSafeAreaInsets = UIEdgeInsetsMake(0, 0, visible ? self.barHeight.constant + 14 : 0, 0);
-        [self.view layoutIfNeeded];
-    }];
-}
-
-- (void)observeScrolling:(UIViewController *)controller {
-    [self.observedPan removeTarget:self action:@selector(scrolled:)];
-    self.observedPan = nil;
-    if (self.current.viewControllers.count != 1) return;
-    for (UIView *view in controller.view.subviews) {
-        if (![view isKindOfClass:UIScrollView.class]) continue;
-        self.observedPan = ((UIScrollView *)view).panGestureRecognizer;
-        [self.observedPan addTarget:self action:@selector(scrolled:)];
-        break;
-    }
-}
-
-- (void)scrolled:(UIPanGestureRecognizer *)pan {
-    NSUserDefaults *defaults = NSUserDefaults.standardUserDefaults;
-    if ([[defaults objectForKey:@"PocketBuildCollapseTabs"] isEqual:@NO]) return;
-    UIScrollView *scroll = (UIScrollView *)pan.view;
-    if (pan.state == UIGestureRecognizerStateBegan) self.lastOffset = [pan translationInView:scroll].y;
-    if (pan.state != UIGestureRecognizerStateChanged || scroll.contentSize.height <= scroll.bounds.size.height - scroll.adjustedContentInset.top - scroll.adjustedContentInset.bottom) return;
-    CGFloat offset = [pan translationInView:scroll].y;
-    CGFloat delta = offset - self.lastOffset;
-    if (fabs(delta) < 28) return;
-    self.lastOffset = offset;
-    BOOL collapse = delta < 0 && scroll.contentOffset.y > -scroll.adjustedContentInset.top + 18;
-    if (collapse != self.collapsed) [self updateBar:collapse animated:YES];
+    self.current.additionalSafeAreaInsets = UIEdgeInsetsMake(0, 0, visible ? height + 10 : 0, 0);
 }
 
 - (void)navigationController:(UINavigationController *)navigation
        willShowViewController:(UIViewController *)controller animated:(BOOL)animated {
-    if (navigation == self.current && navigation.viewControllers.count > 1) [self updateBar:NO animated:animated];
+    if (navigation == self.current && navigation.viewControllers.count > 1) [self updateBar];
 }
 
 - (void)navigationController:(UINavigationController *)navigation
        didShowViewController:(UIViewController *)controller animated:(BOOL)animated {
     if (navigation != self.current) return;
-    [self updateBar:NO animated:animated];
-    [self observeScrolling:controller];
+    [self updateBar];
 }
 @end
 

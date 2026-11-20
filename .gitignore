@@ -1,7 +1,6 @@
 # Local build outputs and secrets
 /build/
 /Vendor/*.xcframework
-/Vendor/REipa/target/
 /.local/
 *.ipa
 *.mobileprovision
@@ -17,12 +16,3 @@ __pycache__/
 # Local icon drafts; the selected master and app icon catalog are versioned.
 /Resources/PocketBuild/PocketBuild-icon-v*.png
 /Resources/PocketBuild/PocketBuild-3d-*.png
-# FLEX/Theos local build state (source and bundled release files are retained)
-/Plugins/FLEX/.theos/
-/Plugins/FLEX/packages/
-/Plugins/FLEX/*.deb
-/Plugins/FLEX/*.dylib
-
-# Optional tools are downloaded separately; never commit local resource archives.
-/Resources/iSH/developer-tools.tar
-/Resources/iSH/reverse-tools.tar

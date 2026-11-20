@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 """Build PocketBuild with its signed compiler core and optional data resources."""
 import argparse
+from collections import deque
 import hashlib
 import json
 import os
@@ -12,98 +13,76 @@ import zipfile
 
 ROOT = Path(__file__).resolve().parents[1]
 VERSION = "0.1.0"
-BUILD_NUMBER = "10"
+BUILD_NUMBER = "11"
 
 
 def compiler_source() -> str:
-    source = (ROOT / "App/main.m").read_text(encoding="utf-8")
-    source = source.split('\n#if TARGET_OS_SIMULATOR\n#include "../tests/RemoteSimulatorRegression.inc"')[0]
-    replacements = {
-        '#import "AI/Agent/TFAIBuildCheckpoint.h"': '#import "BuildOnly/BuildCache.h"',
-        '#import "AI/Background/TFScreenAwake.h"': '#import "BuildOnly/ScreenAwake.h"',
-    }
-    omitted = {
-        '#import "Remote/DXRemoteService.h"', '#import "Studio.h"', '#import "GitUI.h"',
-        '#import "Incoming/TFIncoming.h"', '#import "GitAutomation.h"', '#import "StorageSpace.h"',
-    }
-    lines = []
-    for line in source.splitlines():
-        if line in replacements:
-            lines.append(replacements[line])
-        elif line.startswith('#import "AI/') or line in omitted:
-            continue
-        else:
-            lines.append(line)
-    source = "\n".join(lines).replace("TFAIBuild", "DXBuild") + "\n"
+    source = (ROOT / "App/CompilerCore.m").read_text(encoding="utf-8")
     if "TFAI" in source or "UIApplicationMain" in source or not source.rstrip().endswith("@end"):
-        raise ValueError("Upstream compiler boundary changed. Review main.m before building.")
-    # Downloaded data lives separately from the signed executable frameworks.
-    source = source.replace("NSBundle.mainBundle.privateFrameworksPath", "PBCompilerFrameworks()")
-    source = source.replace("NSBundle.mainBundle.bundlePath", 'PBInstalledPackage(@"support")')
-    source = source.replace(
-        '[[NSBundle mainBundle] pathForResource:@"commands" ofType:@"plist"]',
-        '[PBInstalledPackage(@"support") stringByAppendingPathComponent:@"commands.plist"]',
-    )
-    source = source.replace(
-        'void *handle = dlopen(path.fileSystemRepresentation, RTLD_NOW | RTLD_GLOBAL);',
-        'TMCLog(log, "loading %s: %s\\n", name.UTF8String, path.UTF8String);\n'
-        '    void *handle = dlopen(path.fileSystemRepresentation, RTLD_NOW | RTLD_GLOBAL);',
-    )
-    # runToolOutput captures Logos stdout as source; diagnostics belong on stderr.
-    source = source.replace('TMCLog(log, "loading %s: %s\\n", name.UTF8String, path.UTF8String);',
-                            'TMCLog(errors, "loading %s: %s\\n", name.UTF8String, path.UTF8String);', 1)
-    source = source.replace('if (!handle) { TMCLog(log, "%s\\n", dlerror()); return 127; }',
-                            'if (!handle) { TMCLog(errors, "%s\\n", dlerror()); return 127; }')
-    # Keep the upstream compile loop; change the product-specific link and package steps.
-    hooks = {
-        'self.lastBuild = [documents stringByAppendingPathComponent:[@"Build-" stringByAppendingString:NSUUID.UUID.UUIDString]];':
-            'self.lastBuild = self.trialWorkspace ? [self.trialWorkspace stringByAppendingPathComponent:@"output"] : '
-            '(self.projectBuildDirectory ?: [documents stringByAppendingPathComponent:[@"Build-" stringByAppendingString:NSUUID.UUID.UUIDString]]);',
-        'TMCDocumentPublishBuild(documents,build,nil);': 'if (!self.trialWorkspace) TMCDocumentPublishBuild(documents,build,nil);',
-        'NSString *projectDirectory=self.importedProject?:source.stringByDeletingLastPathComponent;':
-            'NSString *projectDirectory=(self.importedProject?:source.stringByDeletingLastPathComponent).stringByStandardizingPath;',
-        'NSError *namingError=nil;NSString *dylibName=':
-            'BOOL isApp=[config[@"productType"] isEqual:@"app"]; NSError *namingError=nil;'
-            'NSDictionary *appPlan=isApp?PBPrepareAppPlan(projectDirectory,config,&namingError):nil;NSString *dylibName=',
-        'if(multipleSchemes&&[config[@"package"] boolValue])':
-            'if(isApp){dylibName=appPlan[@"name"];debName=@"unused.deb";}\n        if(!isApp&&multipleSchemes&&[config[@"package"] boolValue])',
-        'link = [TMCPackageLinkArguments(link, packageScheme, vendorFrameworks, tweakName) mutableCopy];':
-            'link = [(isApp?PBAppLinkArguments(link):TMCPackageLinkArguments(link,packageScheme,vendorFrameworks,tweakName)) mutableCopy];',
-        'BOOL stripSymbols=TFShouldStripSymbols(config);':
-            'BOOL stripSymbols=!isApp&&TFShouldStripSymbols(config);',
-        'TMCValidateDylibSignature([NSData dataWithContentsOfFile:[build stringByAppendingPathComponent:dylibName]], &symbolError)':
-            'TMCValidateMachOSignature([NSData dataWithContentsOfFile:[build stringByAppendingPathComponent:dylibName]], isApp?MH_EXECUTE:MH_DYLIB, &symbolError)',
-        'BOOL shouldPackage=[config[@"package"] boolValue];':
-            'BOOL shouldPackage=!isApp&&[config[@"package"] boolValue];',
-        'if(toolSuccess&&!shouldPackage)': 'if(toolSuccess&&!shouldPackage&&!isApp)',
-        'if(!exportDylib&&!shouldPackage)': 'if(!exportDylib&&!shouldPackage&&!isApp)',
-        'report[@"namedArtifacts"]=namedArtifacts;':
-            'if(isApp){report[@"productType"]=@"app";report[@"signing"]=@"ad-hoc executable; IPA requires external installation signing";'
-            'if(toolSuccess){NSError *appError=nil;NSString *ipa=PBPackageApp(build,appPlan,^BOOL{return self.cancelRequested;},&appError);'
-            'report[@"success"]=@(ipa!=nil);if(ipa)[namedArtifacts addObject:ipa];else {report[@"packageError"]=appError.localizedDescription?:@"IPA packaging failed";TMCLog(log,"IPA: %s\\n",[report[@"packageError"] UTF8String]);}}}\n'
-            '        report[@"namedArtifacts"]=namedArtifacts;',
-    }
-    for old, new in hooks.items():
-        if source.count(old) != 1:
-            raise ValueError("Upstream App build hook changed: " + old)
-        source = source.replace(old, new)
-    prefix = '''#import "BuildOnly/PackagePaths.h"
-#import "BuildOnly/AppBuild.h"
-#import "BuildOnly/ScreenAwake.h"
-// The remote service owns the foreground wake policy.
-#define TFScreenAwakeSet(reason, active) ((void)0)
-static NSString *PBCompilerFrameworks(void) {
-    return [NSBundle bundleForClass:NSClassFromString(@"CompilerController")].bundlePath.stringByDeletingLastPathComponent;
-}
-'''
-    return prefix + source
+        raise ValueError("CompilerCore.m must contain only the PocketBuild compiler implementation.")
+    return source
 
 
-def zip_directory(directory: Path, output: Path) -> str:
-    with zipfile.ZipFile(output, "w", zipfile.ZIP_DEFLATED) as archive:
-        for path in sorted(directory.rglob("*")):
-            if path.is_file():
-                archive.write(path, path.relative_to(directory).as_posix())
+def sdk_files(directory: Path):
+    directory = directory.resolve()
+    tracked_links = set()
+    if (ROOT / ".git").exists() and directory.is_relative_to(ROOT):
+        # Git on Windows can check symbolic links out as small files containing the target path.
+        index = subprocess.check_output(
+            ["git", "ls-files", "--stage", "-z", "--", directory.relative_to(ROOT).as_posix()], cwd=ROOT)
+        tracked_links = {ROOT / Path(entry.split("\t", 1)[1])
+                         for entry in index.decode("utf-8").split("\0") if entry.startswith("120000 ")}
+
+    def resolve(relative: Path) -> Path:
+        pending = deque(relative.parts)
+        current = directory
+        followed = 0
+        while pending:
+            name = pending.popleft()
+            if name == "..":
+                if current == directory:
+                    raise ValueError(f"SDK link leaves its source directory: {relative}")
+                current = current.parent
+                continue
+            candidate = current / name
+            if candidate.is_symlink() or candidate in tracked_links:
+                destination = candidate.readlink() if candidate.is_symlink() else Path(candidate.read_text(encoding="utf-8").strip())
+                followed += 1
+                if destination.anchor or followed > 40:
+                    raise ValueError(f"Invalid SDK link: {relative}")
+                pending.extendleft(reversed(destination.parts))
+            else:
+                current = candidate
+        if not current.exists():
+            raise ValueError(f"Missing SDK link target: {relative} -> {current}")
+        return current
+
+    def visit(folder: Path, name: Path, parents: tuple):
+        for entry in sorted(folder.iterdir()):
+            member = name / entry.name
+            target = resolve(entry.relative_to(directory)) if entry.is_symlink() or entry in tracked_links else entry
+            if target.is_dir():
+                if target in parents:
+                    raise ValueError(f"Circular SDK directory link: {member}")
+                yield from visit(target, member, parents + (target,))
+            elif target.is_file():
+                yield target, member.as_posix()
+
+    yield from visit(directory, Path(), (directory,))
+
+
+def zip_directory(directory: Path, output: Path, *, sdk: bool = False) -> str:
+    entries = sdk_files(directory) if sdk else (
+        (path, path.relative_to(directory).as_posix()) for path in sorted(directory.rglob("*")) if path.is_file()
+    )
+    temporary = output.with_suffix(".part")
+    try:
+        with zipfile.ZipFile(temporary, "w", zipfile.ZIP_DEFLATED) as archive:
+            for source, member in entries:
+                archive.write(source, member)
+        temporary.replace(output)
+    finally:
+        temporary.unlink(missing_ok=True)
     digest = hashlib.sha256()
     with output.open("rb") as stream:
         for chunk in iter(lambda: stream.read(1024 * 1024), b""):
@@ -111,18 +90,44 @@ def zip_directory(directory: Path, output: Path) -> str:
     return digest.hexdigest()
 
 
+def package_entry(output: Path, base_url: str, identifier: str, title: str, source: Path, version: str = "") -> dict:
+    if version and plistlib.loads((source / "SDKSettings.plist").read_bytes()).get("Version") != version:
+        raise ValueError("Unexpected SDK metadata: " + str(source))
+    filename = f"PocketBuild-{identifier}-{VERSION}.zip"
+    archive = output / filename
+    digest = zip_directory(source, archive, sdk=bool(version))
+    url = base_url.rstrip("/") + "/" + filename if base_url else filename
+    return {"id":identifier, "title":title, "url":url, "sha256":digest, "bytes":archive.stat().st_size}
+
+
+def export_sdk_packages(args, output: Path, extra=()):
+    output.mkdir(parents=True, exist_ok=True)
+    entries = list(extra)
+    for identifier, source, version in (("sdk16", args.sdk16, "16.4"), ("sdk26", args.sdk26, "26.0")):
+        entries.append(package_entry(output, args.package_base_url, identifier, f"iOS {version} SDK", source, version))
+    manifest = output / "PocketBuild-packages.json"
+    manifest.write_text(json.dumps({"schema":1, "version":VERSION, "packages":entries},
+        ensure_ascii=False, indent=2), encoding="utf-8")
+    return manifest
+
+
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--check", action="store_true")
     parser.add_argument("--simulator", action="store_true")
-    parser.add_argument("--packages", action="store_true", help="Export SDK, header and Logos resource packages.")
+    outputs = parser.add_mutually_exclusive_group()
+    outputs.add_argument("--packages", action="store_true", help="Export SDK, header and Logos resource packages.")
+    outputs.add_argument("--sdk-packages-only", action="store_true", help="Repack SDK downloads without Xcode or an IPA build.")
     parser.add_argument("--package-base-url", default="", help="Optional HTTPS/LAN directory URL for package downloads.")
     parser.add_argument("--sdk16", type=Path, default=ROOT / "Resources/SDK")
     parser.add_argument("--sdk26", type=Path, default=ROOT / "LocalSDKs/iPhoneOS26.0.sdk")
     args = parser.parse_args()
-    core = compiler_source()
+    if args.sdk_packages_only:
+        print(export_sdk_packages(args, ROOT / "build/sdk-packages"))
+        return
+    compiler_source()
     if args.check:
-        print("PASS: isolated compiler extraction. One IPA embeds compiler frameworks; SDK and header resources are optional.")
+        print("PASS: standalone compiler source. One IPA embeds compiler frameworks; SDK and header resources are optional.")
         return
 
     platform = "iphonesimulator" if args.simulator else "iphoneos"
@@ -160,7 +165,6 @@ def main() -> None:
                      and item.get("SupportedPlatformVariant", "") == ("simulator" if args.simulator else ""))
         source = bundle / match["LibraryIdentifier"] / match["LibraryPath"]
         shutil.copytree(source, frameworks / source.name)
-    (build / "CompilerCore.m").write_text(core, encoding="utf-8")
     module = frameworks / "PBCompiler.framework"
     module.mkdir()
     module_info = {
@@ -170,7 +174,7 @@ def main() -> None:
     }
     (module / "Info.plist").write_bytes(plistlib.dumps(module_info))
     compiler_sources = [
-        build / "CompilerCore.m",
+        ROOT / "App/CompilerCore.m",
         *[ROOT / "App" / name for name in (
             "BuildOnly/SDKResources.m", "RuntimeDiagnostics.m", "ArchiveImport.m", "TheosMakefile.m",
             "DebPackage.m", "OutputNaming.m", "CompatibilityRepair.m", "GlassSupport.m", "LinkSupport.m",
@@ -197,7 +201,6 @@ def main() -> None:
     if args.packages:
         output = build / "packages"
         output.mkdir(exist_ok=True)
-        entries = []
         support = build / "support"
         if support.exists():
             support.resolve().relative_to((ROOT / "build").resolve())
@@ -207,22 +210,8 @@ def main() -> None:
             shutil.copytree(ROOT / "Resources" / name, support / name)
         for name,value in (("commands.plist",commands),("extraCommandsDictionary.plist",commands),("commandDictionary.plist",{})):
             (support / name).write_bytes(plistlib.dumps(value))
-        for identifier, title, source in (
-            ("support","Logos、Clang 头文件和构建资源",support),
-            ("sdk16","iOS 16.4 SDK",args.sdk16),
-            ("sdk26","iOS 26.0 SDK",args.sdk26),
-        ):
-            if identifier.startswith("sdk"):
-                expected = "16.4" if identifier == "sdk16" else "26.0"
-                if plistlib.loads((source / "SDKSettings.plist").read_bytes()).get("Version") != expected:
-                    raise ValueError("Unexpected SDK metadata: " + str(source))
-            filename = "PocketBuild-" + identifier + "-" + VERSION + ".zip"
-            archive = output / filename
-            digest = zip_directory(source, archive)
-            url = args.package_base_url.rstrip("/") + "/" + filename if args.package_base_url else filename
-            entries.append({"id":identifier,"title":title,"url":url,"sha256":digest,"bytes":archive.stat().st_size})
-        (output / "PocketBuild-packages.json").write_text(
-            json.dumps({"schema":1,"version":VERSION,"packages":entries},ensure_ascii=False,indent=2),encoding="utf-8")
+        entry = package_entry(output, args.package_base_url, "support", "Logos、Clang 头文件和构建资源", support)
+        export_sdk_packages(args, output, (entry,))
 
     shutil.copytree(ROOT / "Resources/BuildWeb", app / "BuildWeb")
     shutil.copy2(ROOT / "Resources/PocketBuild/Assets.xcassets/AppIcon.appiconset/icon-120.png", app / "BuildWeb/brand.png")

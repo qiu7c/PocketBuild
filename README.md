@@ -23,7 +23,7 @@ PocketBuild 最低 iOS 15.0，内嵌 arm64 编译器。当前构建入口支持 
 
 工作台展示服务监听状态、电脑访问和连接码验证进度，以及最近一条构建。服务启动时间与认证请求数可在连接诊断查看。首次引导包含开场动画，可从「连接指南」重看。开启系统「减弱动态效果」后不播放开场位移动画。传输采用局域网 HTTP。浏览器上传使用分块暂存，完整文件收到后才替换项目文件。任务开始时复制源码快照，后续编辑用于下一次构建。
 
-底栏提供「工作台」「构建」「组件」「设置」四个入口。列表向下浏览时底栏收起标签，向回滚动时恢复。可在设置里关闭自动收起。「构建」页读取已保存在手机上的正式构建报告，可查看日志并分享 IPA、dylib、DEB 和报告。试编译结果显示在组件页。
+悬浮底栏在「工作台」「构建」「组件」「设置」的首页显示，滚动时保留图标与文字。设置页按连接与构建、后台任务、数据、关于与支持分组。「构建」页读取已保存在手机上的正式构建报告，可查看日志并分享 IPA、dylib、DEB 和报告。试编译结果显示在组件页。
 
 手机、浏览器与 MCP 通过项目 ID 关联工程，每次正式构建有自己的构建 ID、配置和源码快照。浏览器提供「导入为新项目」与「更新当前项目」两个入口。构建页按项目查看历史、用当前源码重建，或清理旧构建并保留最近一次成功记录。旧记录可手动从「未归档」归入实际所属项目。
 
@@ -36,6 +36,8 @@ PocketBuild 最低 iOS 15.0，内嵌 arm64 编译器。当前构建入口支持 
 「后台构建辅助」默认关闭。开启后，正在进行的构建或试编译会混播静音音频，任务结束时释放音频会话。系统挂起、音频中断和强退仍可能停止任务。
 
 浏览器「构建设置」可以选择独立 dylib、DEB，以及有根、无根、隐根三种包类型，并设置 CPU、SDK 和最低系统版本。保存后写入 MobileCompiler.json，其余工程配置保留。可以同时选择独立 dylib 和三个 DEB；不同包布局沿用上游的链接与打包处理，实际运行需在对应环境验证。
+
+MobileCompiler.json 可设置 `"hiddenVisibility": true`，为每个编译单元传入 `-fvisibility=hidden`。省略或设为 false 时沿用编译器默认可见性。导入 Makefile 时会识别 `-fvisibility=hidden` 和 `-fvisibility=default`；这个选项不放在 warningFlags 中，也不等同于链接后的符号裁剪。已安装的旧版 PocketBuild 需要更新后才会应用此字段，可在构建日志的 clang 命令中核对。
 
 ## 用 MCP 让 AI 调用手机编译
 
@@ -59,7 +61,7 @@ App 构建包含源文件编译、MH_EXECUTE 可执行文件链接、ad-hoc 签�
 
 安装齐全后，可点「试编译 UIKit 示例」在手机本机编译、链接并打包示例 IPA。选择「26 + C++」会额外编译 C++ 标准库示例。试编译结束、失败或取消后清理临时工程、缓存、日志和产物，界面仅显示本次结果。App 异常退出留下的试编译目录会在下次启动时清理。
 
-下载完成后会校验 SHA-256，再解压安装。默认下载包托管在 [PocketBuild 下载源](https://github.com/qiu7c/PocketBuild/releases/tag/resources-v1)。
+下载完成后会校验 SHA-256，再解压安装。默认下载包托管在 GitHub。Build 11 使用补齐标准框架路径的 [iOS 16.4 和 26.0 SDK](https://github.com/qiu7c/PocketBuild/releases/tag/resources-v2)，[构建资源](https://github.com/qiu7c/PocketBuild/releases/tag/resources-v1)沿用已验证的版本。
 
 若要使用局域网镜像，解压 PocketBuild-resources 云编译产物，用 PowerShell 启动 HTTP 服务。请把 IP 和目录改为实际值。
 
@@ -90,7 +92,7 @@ App 构建包含源文件编译、MH_EXECUTE 可执行文件链接、ad-hoc 签�
 
 IPA 使用 ad-hoc 构建签名。普通证书安装前需要对 App 和所有内嵌框架完成对应签名。可用 --package-base-url 指定资源 ZIP 的服务器目录，默认清单使用相对地址，便于在局域网直接提供下载。
 
-脚本 --check 可在 Windows 检查构建核心提取。GitHub Actions 的 build-only.yml 使用 macOS 构建并上传 IPA 与资源包。
+脚本 `--check` 可在 Windows 检查独立编译器源码。GitHub Actions 的 build-only.yml 使用 macOS 构建并上传 IPA 与资源包。项目结构和本地检验命令见 [PocketBuild 构建指南](docs/BUILDING.md)。
 
 ## 开发状态
 
@@ -102,4 +104,4 @@ Build 7 增加开场动画、四步首次配置、连接设置和服务工作台
 
 arm64e 插件试构建中，Clang 生成了 CPU 子类型 2 的对象文件，链接命令返回 0，但输出未通过 arm64e 架构校验，未导出为成功产物。手机本机 App/IPA 构建、普通证书安装、插件在宿主中的运行及其他系统环境仍待验收。Windows 独立 exe 尚未实现。
 
-上游代码和许可证保留在仓库中。PocketBuild 构建目标采用独立源文件清单，不包含上游聊天、模型服务、Agent 或 iSH 终端模块。上游项目说明见 docs/UPSTREAM_README.md，版权和第三方清单见 COPYRIGHT、LICENSE、THIRD_PARTY_NOTICES.md。
+PocketBuild 基于 [Dylix](https://github.com/yangokok886/dylix) 的本机构建核心。版权和第三方清单见 COPYRIGHT、LICENSE、THIRD_PARTY_NOTICES.md。

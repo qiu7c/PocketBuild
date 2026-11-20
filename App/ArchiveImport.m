@@ -261,7 +261,7 @@ static NSDictionary *PrepareImportedProject(NSString *root, NSString *fallbackNa
     if(config[@"packageSchemes"]&&![config[@"packageSchemes"] count]){if(error)*error=ImportError(TMCArchiveProjectInvalid,@"packageSchemes 至少选择一项");return nil;}
     for(NSString *scheme in config[@"packageSchemes"])if(![@[@"rootless",@"rootful",@"roothide"] containsObject:scheme]){if(error)*error=ImportError(TMCArchiveProjectInvalid,@"packageSchemes 包类型无效");return nil;}
     for(NSString *key in @[@"packageScheme",@"cpuArchitecture"]){NSArray *allowed=[key isEqual:@"packageScheme"]?@[@"rootless",@"rootful",@"roothide"]:@[@"arm64",@"arm64e"];if(config[key]&&![allowed containsObject:config[key]]){if(error)*error=ImportError(TMCArchiveProjectInvalid,[key stringByAppendingString:@" 值不受支持"]);return nil;}}
-    for(NSString *key in @[@"package",@"exportDylib",@"collectErrors",@"objcArc"])if(config[key]&&![config[key] isKindOfClass:NSNumber.class]){if(error)*error=ImportError(TMCArchiveProjectInvalid,[key stringByAppendingString:@" 应为布尔值"]);return nil;}
+    for(NSString *key in @[@"package",@"exportDylib",@"collectErrors",@"objcArc",@"hiddenVisibility"])if(config[key]&&![config[key] isKindOfClass:NSNumber.class]){if(error)*error=ImportError(TMCArchiveProjectInvalid,[key stringByAppendingString:@" 应为布尔值"]);return nil;}
     NSArray *sources=existing&&config[@"sources"]?config[@"sources"]:nil;
     NSDictionary *makeResult=existing?@{@"settings":@{},@"unresolved":@{},@"notes":@[]}:TMCReadTheosMakefile(root,error);
     if(!makeResult)return nil;
@@ -316,6 +316,8 @@ static NSDictionary *PrepareImportedProject(NSString *root, NSString *fallbackNa
                 else if([@[@"-O0",@"-O1",@"-O2",@"-O3",@"-Os",@"-Oz"] containsObject:flag])config[@"optimization"]=flag;
                 else if([flag isEqual:@"-fno-objc-arc"])config[@"objcArc"]=@NO;
                 else if([flag isEqual:@"-fobjc-arc"])config[@"objcArc"]=@YES;
+                else if([flag isEqual:@"-fvisibility=hidden"])config[@"hiddenVisibility"]=@YES;
+                else if([flag isEqual:@"-fvisibility=default"])config[@"hiddenVisibility"]=@NO;
                 else if([flag hasPrefix:@"-std="]){NSString *standard=[flag substringFromIndex:5];if([standard containsString:@"++"])config[@"cxxStandard"]=standard;else config[@"cStandard"]=standard;}
             }
             config[@"defines"]=[NSOrderedSet orderedSetWithArray:defines].array;config[@"warningFlags"]=[NSOrderedSet orderedSetWithArray:warnings].array;config[@"includeDirectories"]=[includes.allObjects sortedArrayUsingSelector:@selector(compare:)];

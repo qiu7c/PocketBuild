@@ -29,14 +29,14 @@
     self.navigationItem.backButtonDisplayMode=UINavigationItemBackButtonDisplayModeMinimal;
     UIStackView *content=PBPageContent(self.view,self.view.bottomAnchor);
     UIStackView *setup = PBCard();
-    [setup addArrangedSubview:PBLabel(@"为你的构建准备组件", 18, UIFontWeightBold, UIColor.labelColor)];
+    [setup addArrangedSubview:PBLabel(@"构建用途", 15, UIFontWeightMedium, UIColor.labelColor)];
     self.buildPurpose = [[UISegmentedControl alloc] initWithItems:@[@"常规", @"iOS 26", @"26 + C++"]];
     self.buildPurpose.selectedSegmentIndex = [self.buildIssue[@"sdk"] isEqual:@"26.0"] ?
         ([self.buildIssue[@"usesCXX"] boolValue] ? 2 : 1) : 0;
     self.buildPurpose.accessibilityLabel = @"构建用途";
     [self.buildPurpose addTarget:self action:@selector(refresh) forControlEvents:UIControlEventValueChanged];
     [setup addArrangedSubview:self.buildPurpose];
-    self.requirementsLabel = PBLabel(@"", 14, UIFontWeightRegular, UIColor.secondaryLabelColor);
+    self.requirementsLabel = PBLabel(@"", 13, UIFontWeightRegular, UIColor.secondaryLabelColor);
     [setup addArrangedSubview:self.requirementsLabel];
     self.nextAction = PBButton(@"", @"arrow.down.circle", YES);
     [self.nextAction addTarget:self action:@selector(prepareOrTest) forControlEvents:UIControlEventTouchUpInside];

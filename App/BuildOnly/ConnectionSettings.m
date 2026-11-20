@@ -14,8 +14,6 @@
     self.navigationItem.backButtonDisplayMode=UINavigationItemBackButtonDisplayModeMinimal;
     self.navigationItem.rightBarButtonItem=[[UIBarButtonItem alloc] initWithTitle:@"保存" style:UIBarButtonItemStyleDone target:self action:@selector(save)];
     UIStackView *content=PBPageContent(self.view,self.view.bottomAnchor);
-    [content addArrangedSubview:PBLabel(@"让下一次连接\n更顺手。",30,UIFontWeightBold,UIColor.labelColor)];
-    [content addArrangedSubview:PBLabel(@"设置访问地址与配对方式，保存后在下次启动服务时生效。",14,UIFontWeightRegular,UIColor.secondaryLabelColor)];
     UIStackView *network=PBCard();[network addArrangedSubview:PBFeature(@"network",@"局域网地址",@"选择手机的热点或 Wi-Fi 地址。")];
     self.addressField=[self field:@"手机 IPv4" text:[NSUserDefaults.standardUserDefaults stringForKey:@"BuildAddress"] keyboard:UIKeyboardTypeNumbersAndPunctuation secure:NO];
     [network addArrangedSubview:self.addressField];
@@ -40,13 +38,12 @@
     [actions addArrangedSubview:reveal];[actions addArrangedSubview:generate];[self.fixedFields addArrangedSubview:actions];[pairing addArrangedSubview:self.fixedFields];
     [pairing addArrangedSubview:PBLabel(@"随机模式每次启动服务都会换码。固定模式便于浏览器和 MCP 长期使用同一份连接配置。",13,UIFontWeightRegular,UIColor.secondaryLabelColor)];
     [content addArrangedSubview:pairing];[self modeChanged];
-    UIButton *save=PBButton(@"保存连接设置",@"checkmark",YES);[save addTarget:self action:@selector(save) forControlEvents:UIControlEventTouchUpInside];[content addArrangedSubview:save];
-    [content addArrangedSubview:PBLabel(@"正在运行的服务会保留当前连接码，重新启动后使用新设置。",12,UIFontWeightRegular,UIColor.secondaryLabelColor)];
+    [content addArrangedSubview:PBLabel(@"保存后，下次启动服务时使用新设置。",12,UIFontWeightRegular,UIColor.secondaryLabelColor)];
 }
 - (UITextField *)field:(NSString *)placeholder text:(NSString *)text keyboard:(UIKeyboardType)keyboard secure:(BOOL)secure {
     UITextField *field=[UITextField new];field.placeholder=placeholder;field.text=text;field.font=PBFont(15,UIFontWeightRegular);
     field.borderStyle=UITextBorderStyleRoundedRect;field.keyboardType=keyboard;field.autocorrectionType=UITextAutocorrectionTypeNo;
-    field.autocapitalizationType=UITextAutocapitalizationTypeNone;field.secureTextEntry=secure;[field.heightAnchor constraintEqualToConstant:48].active=YES;return field;
+    field.autocapitalizationType=UITextAutocapitalizationTypeNone;field.secureTextEntry=secure;[field.heightAnchor constraintGreaterThanOrEqualToConstant:44].active=YES;return field;
 }
 - (void)modeChanged { self.fixedFields.hidden=self.mode.selectedSegmentIndex==0; }
 - (void)reveal:(UIButton *)button {

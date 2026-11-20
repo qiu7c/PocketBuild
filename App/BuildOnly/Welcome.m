@@ -19,7 +19,7 @@
     [super viewDidLoad];self.navigationItem.largeTitleDisplayMode=UINavigationItemLargeTitleDisplayModeNever;
     self.navigationItem.backButtonDisplayMode=UINavigationItemBackButtonDisplayModeMinimal;
     if(self.firstLaunch)self.navigationItem.rightBarButtonItem=[[UIBarButtonItem alloc] initWithTitle:@"跳过介绍" style:UIBarButtonItemStylePlain target:self action:@selector(finishWithoutSetup)];
-    UIStackView *footer=[UIStackView new];footer.axis=UILayoutConstraintAxisVertical;footer.spacing=12;footer.translatesAutoresizingMaskIntoConstraints=NO;
+    UIStackView *footer=[UIStackView new];footer.axis=UILayoutConstraintAxisVertical;footer.spacing=8;footer.translatesAutoresizingMaskIntoConstraints=NO;
     [self.view addSubview:footer];self.step=PBLabel(@"",12,UIFontWeightSemibold,UIColor.secondaryLabelColor);self.step.textAlignment=NSTextAlignmentCenter;[footer addArrangedSubview:self.step];
     UIStackView *buttons=[UIStackView new];buttons.axis=UILayoutConstraintAxisHorizontal;buttons.spacing=12;
     self.previous=PBButton(@"上一步",@"chevron.left",NO);[self.previous addTarget:self action:@selector(back) forControlEvents:UIControlEventTouchUpInside];
@@ -28,7 +28,7 @@
     [NSLayoutConstraint activateConstraints:@[[footer.leadingAnchor constraintEqualToAnchor:self.view.safeAreaLayoutGuide.leadingAnchor constant:20],
         [footer.trailingAnchor constraintEqualToAnchor:self.view.safeAreaLayoutGuide.trailingAnchor constant:-20],
         [footer.bottomAnchor constraintEqualToAnchor:self.view.keyboardLayoutGuide.topAnchor constant:-12],
-        [self.next.heightAnchor constraintGreaterThanOrEqualToConstant:54]]];
+        [self.next.heightAnchor constraintGreaterThanOrEqualToConstant:44]]];
     self.content=PBPageContent(self.view,footer.topAnchor);[self.view bringSubviewToFront:footer];
     self.mode=[[UISegmentedControl alloc] initWithItems:@[@"固定连接码",@"每次随机"]];self.mode.selectedSegmentIndex=([NSUserDefaults.standardUserDefaults objectForKey:@"FixedConnectionCode"]?DXBuildService.shared.fixedCodeEnabled:YES)?0:1;
     [self.mode addTarget:self action:@selector(changeMode) forControlEvents:UIControlEventValueChanged];
@@ -42,24 +42,24 @@
 - (void)render {
     [self.brand.layer removeAllAnimations];
     for(UIView *v in self.content.arrangedSubviews){[self.content removeArrangedSubview:v];[v removeFromSuperview];}
-    self.step.text=[NSString stringWithFormat:@"%02ld / 04   ·   %@",(long)self.page+1,@[@"认识 PocketBuild",@"连接你的电脑",@"准备构建组件",@"设置配对方式"][self.page]];
+    self.step.text=[NSString stringWithFormat:@"第 %ld 步，共 4 步",(long)self.page+1];
     self.previous.hidden=self.page==0;UIButtonConfiguration *config=self.next.configuration;config.title=self.page==0?@"开始使用":self.page==3?@"进入工作台":@"继续";self.next.configuration=config;
     if(self.page==0) {
-        UIView *stage=[UIView new];[stage.heightAnchor constraintEqualToConstant:230].active=YES;
-        self.brand=[[UIImageView alloc] initWithImage:[UIImage imageNamed:@"BrandMark"]];self.brand.translatesAutoresizingMaskIntoConstraints=NO;self.brand.layer.cornerRadius=42;
+        UIView *stage=[UIView new];[stage.heightAnchor constraintEqualToConstant:170].active=YES;
+        self.brand=[[UIImageView alloc] initWithImage:[UIImage imageNamed:@"BrandMark"]];self.brand.translatesAutoresizingMaskIntoConstraints=NO;self.brand.layer.cornerRadius=33;
         self.brand.layer.cornerCurve=kCACornerCurveContinuous;self.brand.clipsToBounds=YES;[stage addSubview:self.brand];
-        [NSLayoutConstraint activateConstraints:@[[self.brand.widthAnchor constraintEqualToConstant:180],[self.brand.heightAnchor constraintEqualToConstant:180],
+        [NSLayoutConstraint activateConstraints:@[[self.brand.widthAnchor constraintEqualToConstant:140],[self.brand.heightAnchor constraintEqualToConstant:140],
             [self.brand.centerXAnchor constraintEqualToAnchor:stage.centerXAnchor],[self.brand.centerYAnchor constraintEqualToAnchor:stage.centerYAnchor]]];[self.content addArrangedSubview:stage];
-        [self.content addArrangedSubview:PBLabel(@"把编译工作台，\n放进口袋。",34,UIFontWeightBold,UIColor.labelColor)];
-        [self.content addArrangedSubview:PBLabel(@"iPhone 负责构建，电脑负责创作。\n浏览器与 MCP 使用同一套本机编译能力。",16,UIFontWeightRegular,UIColor.secondaryLabelColor)];
+        [self.content addArrangedSubview:PBLabel(@"PocketBuild",24,UIFontWeightSemibold,UIColor.labelColor)];
+        [self.content addArrangedSubview:PBLabel(@"在 iPhone 上编译，通过浏览器或 MCP 从电脑操作。",14,UIFontWeightRegular,UIColor.secondaryLabelColor)];
         UIStackView *card=PBCard();[card addArrangedSubview:PBFeature(@"hammer",@"手机本机构建",@"插件 dylib、三种 DEB，以及受支持的 UIKit App。")];
-        [card addArrangedSubview:PBFeature(@"laptopcomputer",@"Windows 也能顺手开发",@"上传、编辑、查看日志，直接下载编译产物。")];[self.content addArrangedSubview:card];
+        [card addArrangedSubview:PBFeature(@"laptopcomputer",@"电脑工作台",@"上传源码、查看日志和下载产物。")];[self.content addArrangedSubview:card];
     } else if(self.page==1) {
-        [self.content addArrangedSubview:PBLabel(@"一条局域网，\n连接两端。",32,UIFontWeightBold,UIColor.labelColor)];
+        [self.content addArrangedSubview:PBLabel(@"连接电脑",22,UIFontWeightSemibold,UIColor.labelColor)];
         UIStackView *diagram=PBCard();UIStackView *row=[UIStackView new];row.axis=UILayoutConstraintAxisHorizontal;row.distribution=UIStackViewDistributionFillEqually;row.alignment=UIStackViewAlignmentCenter;
         for(NSString *symbol in @[@"iphone",@"arrow.left.arrow.right",@"laptopcomputer"]) {
             UIImageView *icon=[[UIImageView alloc] initWithImage:[UIImage systemImageNamed:symbol]];icon.tintColor=[symbol isEqual:@"arrow.left.arrow.right"]?PBAccent():UIColor.labelColor;icon.contentMode=UIViewContentModeScaleAspectFit;
-            [icon.heightAnchor constraintEqualToConstant:60].active=YES;[row addArrangedSubview:icon];
+            [icon.heightAnchor constraintEqualToConstant:40].active=YES;[row addArrangedSubview:icon];
         }
         [diagram addArrangedSubview:row];[diagram addArrangedSubview:PBLabel(@"个人热点或同一 Wi-Fi 都可以",14,UIFontWeightMedium,UIColor.secondaryLabelColor)];[self.content addArrangedSubview:diagram];
         UIStackView *steps=PBCard();[steps addArrangedSubview:PBFeature(@"1.circle",@"连接网络",@"打开手机个人热点，让 Windows 连上；或让两端连接同一 Wi-Fi。")];
@@ -67,7 +67,7 @@
         [steps addArrangedSubview:PBFeature(@"3.circle",@"打开浏览器或 MCP",@"电脑浏览器访问该地址并输入连接码。MCP 使用相同地址和连接码。")];[self.content addArrangedSubview:steps];
         [self.content addArrangedSubview:PBLabel(@"构建期间让 PocketBuild 保持前台。",13,UIFontWeightMedium,UIColor.secondaryLabelColor)];
     } else if(self.page==2) {
-        [self.content addArrangedSubview:PBLabel(@"按需准备，\n轻装开始。",32,UIFontWeightBold,UIColor.labelColor)];
+        [self.content addArrangedSubview:PBLabel(@"准备构建组件",22,UIFontWeightSemibold,UIColor.labelColor)];
         UIStackView *card=PBCard();[card addArrangedSubview:PBFeature(@"checkmark.seal",@"编译器已随 App 就位",@"Clang、LLVM、LLD 与 Perl 已包含在安装包中。")];
         [card addArrangedSubview:PBFeature(@"shippingbox",@"构建资源 + SDK",@"构建资源必装，SDK 按工程选择。组件库会列出缺少的组件，安装完就能试编译。")];[self.content addArrangedSubview:card];
         UIButton *library = PBButton(@"打开组件库", @"arrow.down.circle", NO);
@@ -75,7 +75,7 @@
         [self.content addArrangedSubview:library];
         [self.content addArrangedSubview:PBLabel(@"可以现在下载，也可以进入工作台后再安装。",13,UIFontWeightRegular,UIColor.secondaryLabelColor)];
     } else {
-        [self.content addArrangedSubview:PBLabel(@"这台电脑，\n下次也认识。",32,UIFontWeightBold,UIColor.labelColor)];
+        [self.content addArrangedSubview:PBLabel(@"设置连接码",22,UIFontWeightSemibold,UIColor.labelColor)];
         UIStackView *card=PBCard();[card addArrangedSubview:PBFeature(@"key.horizontal",@"选择连接码方式",@"固定码适合常用电脑和 MCP，随机码适合临时连接。")];
         [card addArrangedSubview:self.mode];[card addArrangedSubview:self.fixedField];[self changeMode];
         [card addArrangedSubview:PBLabel(@"固定连接码保存在系统钥匙串中；留空会自动生成。以后可在连接设置中修改。",13,UIFontWeightRegular,UIColor.secondaryLabelColor)];[self.content addArrangedSubview:card];

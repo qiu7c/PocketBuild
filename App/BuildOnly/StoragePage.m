@@ -25,37 +25,43 @@
     self.checkpoints = [cache stringByAppendingPathComponent:@"DylixBuildCheckpoints"];
     UIStackView *content = PBPageContent(self.view, self.view.bottomAnchor);
     UIStackView *summary = PBCard();
-    self.space = PBLabel(@"正在读取可用空间…", 16, UIFontWeightSemibold, UIColor.labelColor);
-    [summary addArrangedSubview:self.space];
+    self.space = PBLabel(@"正在读取可用空间…", 14, UIFontWeightMedium, UIColor.secondaryLabelColor);
+    [content addArrangedSubview:self.space];
     [content addArrangedSubview:summary];
 
     NSArray *names = @[@"项目源码", @"历史构建", @"文件 App 中的产物副本", @"编译缓存", @"已下载组件"];
-    NSArray *symbols = @[@"folder", @"hammer", @"doc.on.doc", @"internaldrive", @"shippingbox"];
     NSMutableArray *sizes = [NSMutableArray array];
     for (NSUInteger index = 0; index < names.count; index++) {
-        UIStackView *card = PBCard();
-        [card addArrangedSubview:PBFeature(symbols[index], names[index], @"")];
-        UILabel *size = PBLabel(@"计算中…", 14, UIFontWeightRegular, UIColor.secondaryLabelColor);
-        [sizes addObject:size];
-        [card addArrangedSubview:size];
-        if (index == 1) {
-            self.clearHistory = PBButton(@"清除历史构建", @"trash", NO);
-            self.clearHistory.enabled = NO;
-            [self.clearHistory addTarget:self action:@selector(confirmHistory) forControlEvents:UIControlEventTouchUpInside];
-            [card addArrangedSubview:self.clearHistory];
-        } else if (index == 3) {
-            self.clearCache = PBButton(@"清除编译缓存", @"trash", NO);
-            self.clearCache.enabled = NO;
-            [self.clearCache addTarget:self action:@selector(removeCache) forControlEvents:UIControlEventTouchUpInside];
-            [card addArrangedSubview:self.clearCache];
-        } else if (index == 4) {
-            UIButton *components = PBButton(@"管理组件", @"shippingbox", NO);
-            [components addTarget:self action:@selector(manageComponents) forControlEvents:UIControlEventTouchUpInside];
-            [card addArrangedSubview:components];
+        if (index) {
+            UIView *separator = [UIView new];
+            separator.backgroundColor = UIColor.separatorColor;
+            [separator.heightAnchor constraintEqualToConstant:1.0 / UIScreen.mainScreen.scale].active = YES;
+            [summary addArrangedSubview:separator];
         }
-        [content addArrangedSubview:card];
+        UILabel *name = PBLabel(names[index], 14, UIFontWeightRegular, UIColor.labelColor);
+        UILabel *size = PBLabel(@"计算中…", 13, UIFontWeightRegular, UIColor.secondaryLabelColor);
+        size.textAlignment = NSTextAlignmentRight;
+        [size setContentHuggingPriority:UILayoutPriorityDefaultHigh forAxis:UILayoutConstraintAxisHorizontal];
+        [sizes addObject:size];
+        UIStackView *row = [[UIStackView alloc] initWithArrangedSubviews:@[name, size]];
+        row.alignment = UIStackViewAlignmentFirstBaseline;
+        row.spacing = 10;
+        [summary addArrangedSubview:row];
     }
     self.sizes = sizes;
+    UIStackView *actions = PBCard();
+    actions.spacing = 2;
+    actions.layoutMargins = UIEdgeInsetsMake(4, 15, 4, 15);
+    self.clearHistory = PBLinkButton(@"清除历史构建", @"trash");
+    self.clearHistory.enabled = NO;
+    [self.clearHistory addTarget:self action:@selector(confirmHistory) forControlEvents:UIControlEventTouchUpInside];
+    self.clearCache = PBLinkButton(@"清除编译缓存", @"trash");
+    self.clearCache.enabled = NO;
+    [self.clearCache addTarget:self action:@selector(removeCache) forControlEvents:UIControlEventTouchUpInside];
+    UIButton *components = PBLinkButton(@"管理组件", @"shippingbox");
+    [components addTarget:self action:@selector(manageComponents) forControlEvents:UIControlEventTouchUpInside];
+    for (UIButton *action in @[self.clearHistory, self.clearCache, components]) [actions addArrangedSubview:action];
+    [content addArrangedSubview:actions];
 }
 
 - (void)viewWillAppear:(BOOL)animated {

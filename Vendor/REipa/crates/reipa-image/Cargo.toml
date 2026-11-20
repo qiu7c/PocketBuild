@@ -1,7 +1,0 @@
-[package]
-name = "reipa-image"
-edition.workspace = true
-version.workspace = true
-
-[dependencies]
-reipa-macho.workspace = true

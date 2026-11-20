@@ -24,6 +24,13 @@ def main():
                         str(ROOT / "App/ArchiveImport.m"), str(ROOT / "App/TheosMakefile.m"),
                         "-o", str(records)], check=True)
         subprocess.run([str(records), str(folder)], check=True)
+        importer = folder / "ArchiveImportCLI"
+        subprocess.run(["xcrun", "--sdk", "macosx", "clang", "-fobjc-arc", "-fblocks",
+                        "-framework", "Foundation", "-framework", "CoreFoundation", "-larchive",
+                        str(ROOT / "tests/ArchiveImportCLI.m"), str(ROOT / "App/ArchiveImport.m"),
+                        str(ROOT / "App/TheosMakefile.m"), "-o", str(importer)], check=True)
+        subprocess.run(["python3", str(ROOT / "tests/test_makefile_import.py"), str(importer)], check=True)
+        subprocess.run(["python3", str(ROOT / "tests/test_archive_import.py"), str(importer)], check=True)
         project, build = folder / "project", folder / "build"
         shutil.copytree(ROOT / "Resources/AppTemplate", project)
         build.mkdir()

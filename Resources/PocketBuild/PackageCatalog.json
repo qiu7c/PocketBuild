@@ -12,16 +12,16 @@
     {
       "id": "sdk16",
       "title": "iOS 16.4 SDK",
-      "url": "https://github.com/qiu7c/PocketBuild/releases/download/resources-v1/PocketBuild-sdk16-0.1.0.zip",
-      "sha256": "5da043c92f928fbeede50a1236236feea17b6f00ac09ff52b1853a352a15dc95",
-      "bytes": 35759055
+      "url": "https://github.com/qiu7c/PocketBuild/releases/download/resources-v2/PocketBuild-sdk16-0.1.0.zip",
+      "sha256": "712424a99c52f1b0c772bec7610d82ecde79362fad05847d95090147233227c4",
+      "bytes": 36342178
     },
     {
       "id": "sdk26",
       "title": "iOS 26.0 SDK",
-      "url": "https://github.com/qiu7c/PocketBuild/releases/download/resources-v1/PocketBuild-sdk26-0.1.0.zip",
-      "sha256": "9fcb5cc0291ed6df1ea480172d1e695d991c0467c483f1a606f5b2a963e68cd0",
-      "bytes": 43195711
+      "url": "https://github.com/qiu7c/PocketBuild/releases/download/resources-v2/PocketBuild-sdk26-0.1.0.zip",
+      "sha256": "0f2867e592cc688ba6cd0ac520b0c501a36f3e5273814abca1aa1515b2630464",
+      "bytes": 44079093
     }
   ]
 }

@@ -26,7 +26,7 @@ static UIViewController *BuildResult(NSString *identifier, BOOL assign);
     self.navigationItem.backButtonDisplayMode = UINavigationItemBackButtonDisplayModeMinimal;
     UIStackView *content = PBPageContent(self.view, self.view.bottomAnchor);
     self.activeCard = PBCard();
-    [self.activeCard addArrangedSubview:PBLabel(PBBuildStateTitle(@"running"), 19, UIFontWeightBold, UIColor.labelColor)];
+    [self.activeCard addArrangedSubview:PBLabel(PBBuildStateTitle(@"running"), 16, UIFontWeightSemibold, UIColor.labelColor)];
     self.stage = PBLabel(@"", 14, UIFontWeightRegular, UIColor.secondaryLabelColor);
     [self.activeCard addArrangedSubview:self.stage];
     self.progress = [UIProgressView new];
@@ -36,7 +36,7 @@ static UIViewController *BuildResult(NSString *identifier, BOOL assign);
     [self.cancel addTarget:self action:@selector(cancelBuild) forControlEvents:UIControlEventTouchUpInside];
     [self.activeCard addArrangedSubview:self.cancel];
     [content addArrangedSubview:self.activeCard];
-    if (!self.projectID) [content addArrangedSubview:PBLabel(@"项目", 19, UIFontWeightBold, UIColor.labelColor)];
+    if (!self.projectID) [content addArrangedSubview:PBLabel(@"项目", 13, UIFontWeightMedium, UIColor.secondaryLabelColor)];
     self.history = [UIStackView new];
     self.history.axis = UILayoutConstraintAxisVertical;
     self.history.spacing = 12;
@@ -102,7 +102,7 @@ static UIViewController *BuildResult(NSString *identifier, BOOL assign);
             self.title = @"未归档";
         }
         NSArray *jobs = groups[self.projectID] ?: @[];
-        [self.history addArrangedSubview:PBLabel(@"构建记录", 18, UIFontWeightSemibold, UIColor.labelColor)];
+        [self.history addArrangedSubview:PBLabel(@"构建记录", 13, UIFontWeightMedium, UIColor.secondaryLabelColor)];
         for (NSDictionary *job in jobs) {
             if ([job[@"state"] isEqual:@"running"]) continue;
             [self addRecord:job];
@@ -163,7 +163,7 @@ static UIViewController *BuildResult(NSString *identifier, BOOL assign);
     NSDictionary *summary = [DXBuildService.shared projectDetails:identifier];
     NSDictionary *issue = summary[@"issue"];
     NSString *product = [(summary[@"productType"] ?: project[@"productType"]) isEqual:@"app"] ? @"UIKit App" : @"插件";
-    [card addArrangedSubview:PBLabel(product, 20, UIFontWeightBold, UIColor.labelColor)];
+    [card addArrangedSubview:PBLabel(product, 16, UIFontWeightSemibold, UIColor.labelColor)];
     if (summary[@"sdk"]) {
         NSString *sdk = [NSString stringWithFormat:@"iOS %@ SDK · 最低 iOS %@ · %@", summary[@"sdk"], summary[@"minimum"], summary[@"cpu"]];
         NSArray *outputs = summary[@"outputs"];
@@ -329,7 +329,7 @@ static UIViewController *BuildResult(NSString *identifier, BOOL assign);
     UIViewController *detail = self;
     UIStackView *summary = PBCard();
     NSString *result = PBBuildStateTitle(job[@"state"]);
-    [summary addArrangedSubview:PBLabel(result, 23, UIFontWeightBold, UIColor.labelColor)];
+    [summary addArrangedSubview:PBLabel(result, 19, UIFontWeightSemibold, UIColor.labelColor)];
     if (report[@"sdkVersion"] || job[@"sdk"]) {
         NSString *sdk = [NSString stringWithFormat:@"iOS %@ SDK · %@", report[@"sdkVersion"] ?: job[@"sdk"],
             report[@"cpuArchitecture"] ?: job[@"cpu"] ?: @"arm64"];
@@ -383,7 +383,7 @@ static UIViewController *BuildResult(NSString *identifier, BOOL assign);
     if (artifacts.count) {
         UIStackView *output = PBCard();
         [output addArrangedSubview:PBLabel([job[@"state"] isEqual:@"succeeded"] ? @"构建产物" : @"已生成文件",
-            18, UIFontWeightBold, UIColor.labelColor)];
+            15, UIFontWeightSemibold, UIColor.labelColor)];
         for (NSString *file in artifacts) {
             [self addShareButtonForFile:file path:path to:output title:@"保存或分享" showName:YES];
         }
@@ -391,7 +391,7 @@ static UIViewController *BuildResult(NSString *identifier, BOOL assign);
     }
 
     UIStackView *technical = PBCard();
-    [technical addArrangedSubview:PBLabel(@"日志与快照", 18, UIFontWeightSemibold, UIColor.labelColor)];
+    [technical addArrangedSubview:PBLabel(@"日志与快照", 15, UIFontWeightMedium, UIColor.labelColor)];
     NSString *log = [path stringByAppendingPathComponent:@"build.log"];
     __weak UIViewController *weakDetail = detail;
     if (TMCRegularDocument(log, NO)) {

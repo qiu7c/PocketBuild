@@ -24,7 +24,6 @@
         style:UIBarButtonItemStylePlain target:self action:@selector(settings)];
     self.navigationItem.rightBarButtonItem.accessibilityLabel = @"连接设置";
     UIStackView *content = PBPageContent(self.view, self.view.bottomAnchor);
-    content.spacing = 16;
 
     UIStackView *service = PBCard();
     UIStackView *status = [UIStackView new];
@@ -32,17 +31,17 @@
     status.alignment = UIStackViewAlignmentCenter;
     status.spacing = 8;
     self.statusDot = [UIView new];
-    self.statusDot.layer.cornerRadius = 4;
+    self.statusDot.layer.cornerRadius = 3;
     [NSLayoutConstraint activateConstraints:@[
-        [self.statusDot.widthAnchor constraintEqualToConstant:8],
-        [self.statusDot.heightAnchor constraintEqualToConstant:8]
+        [self.statusDot.widthAnchor constraintEqualToConstant:6],
+        [self.statusDot.heightAnchor constraintEqualToConstant:6]
     ]];
-    self.serviceStatus = PBLabel(@"局域网服务", 13, UIFontWeightSemibold, UIColor.secondaryLabelColor);
+    self.serviceStatus = PBLabel(@"局域网服务", 12, UIFontWeightMedium, UIColor.secondaryLabelColor);
     [status addArrangedSubview:self.statusDot];
     [status addArrangedSubview:self.serviceStatus];
     [service addArrangedSubview:status];
-    self.serviceTitle = PBLabel(@"连接电脑", 26, UIFontWeightBold, UIColor.labelColor);
-    self.serviceDetail = PBLabel(@"", 14, UIFontWeightRegular, UIColor.secondaryLabelColor);
+    self.serviceTitle = PBLabel(@"连接电脑", 20, UIFontWeightSemibold, UIColor.labelColor);
+    self.serviceDetail = PBLabel(@"", 13, UIFontWeightRegular, UIColor.secondaryLabelColor);
     [service addArrangedSubview:self.serviceTitle];
     [service setCustomSpacing:5 afterView:self.serviceTitle];
     [service addArrangedSubview:self.serviceDetail];
@@ -51,8 +50,8 @@
     self.connection.axis = UILayoutConstraintAxisVertical;
     self.connection.spacing = 6;
     [self.connection addArrangedSubview:PBLabel(@"访问地址", 12, UIFontWeightSemibold, UIColor.secondaryLabelColor)];
-    self.addressLabel = PBLabel(@"", 18, UIFontWeightSemibold, UIColor.labelColor);
-    self.addressLabel.font = [UIFontMetrics.defaultMetrics scaledFontForFont:[UIFont monospacedSystemFontOfSize:18 weight:UIFontWeightSemibold]];
+    self.addressLabel = PBLabel(@"", 15, UIFontWeightMedium, UIColor.labelColor);
+    self.addressLabel.font = [UIFontMetrics.defaultMetrics scaledFontForFont:[UIFont monospacedSystemFontOfSize:15 weight:UIFontWeightMedium]];
     self.addressLabel.lineBreakMode = NSLineBreakByCharWrapping;
     [self.connection addArrangedSubview:self.addressLabel];
     [self.connection setCustomSpacing:12 afterView:self.addressLabel];
@@ -91,42 +90,38 @@
     [self.serviceActions addArrangedSubview:self.refreshButton];
     [self.serviceActions addArrangedSubview:self.stopButton];
     [service addArrangedSubview:self.serviceActions];
-    self.connectionHelp = PBButton(@"查看连接诊断", @"stethoscope", NO);
+    self.connectionHelp = PBLinkButton(@"连接诊断", @"stethoscope");
     [self.connectionHelp addTarget:self action:@selector(diagnostics) forControlEvents:UIControlEventTouchUpInside];
     [service addArrangedSubview:self.connectionHelp];
     [content addArrangedSubview:service];
 
     UIStackView *job = PBCard();
     job.spacing = 9;
-    [job addArrangedSubview:PBLabel(@"最近构建", 13, UIFontWeightSemibold, UIColor.secondaryLabelColor)];
-    self.jobTitle = PBLabel(@"暂无构建记录", 21, UIFontWeightBold, UIColor.labelColor);
-    self.jobDetail = PBLabel(@"", 14, UIFontWeightRegular, UIColor.secondaryLabelColor);
+    [job addArrangedSubview:PBLabel(@"最近构建", 12, UIFontWeightMedium, UIColor.secondaryLabelColor)];
+    self.jobTitle = PBLabel(@"暂无构建记录", 16, UIFontWeightSemibold, UIColor.labelColor);
+    self.jobDetail = PBLabel(@"", 13, UIFontWeightRegular, UIColor.secondaryLabelColor);
     self.jobProgress = [UIProgressView new];
     self.jobProgress.progressTintColor = PBAccent();
     [job addArrangedSubview:self.jobTitle];
     [job addArrangedSubview:self.jobProgress];
     [job addArrangedSubview:self.jobDetail];
-    self.jobAction = PBButton(@"查看构建", @"chevron.right", NO);
+    self.jobAction = PBLinkButton(@"查看构建", @"chevron.right");
     [self.jobAction addTarget:self action:@selector(openJob) forControlEvents:UIControlEventTouchUpInside];
     [job addArrangedSubview:self.jobAction];
     [content addArrangedSubview:job];
 
     UIStackView *prepare = PBCard();
-    [prepare addArrangedSubview:PBLabel(@"构建组件", 18, UIFontWeightSemibold, UIColor.labelColor)];
-    self.readiness = PBLabel(@"", 14, UIFontWeightRegular, UIColor.secondaryLabelColor);
+    [prepare addArrangedSubview:PBLabel(@"构建组件", 15, UIFontWeightMedium, UIColor.labelColor)];
+    self.readiness = PBLabel(@"", 13, UIFontWeightRegular, UIColor.secondaryLabelColor);
     [prepare addArrangedSubview:self.readiness];
-    UIButton *tools = PBButton(@"查看组件与试编译", @"shippingbox", NO);
+    UIButton *tools = PBLinkButton(@"组件与试编译", @"shippingbox");
     [tools addTarget:self action:@selector(openTools) forControlEvents:UIControlEventTouchUpInside];
     [prepare addArrangedSubview:tools];
     [content addArrangedSubview:prepare];
 
-    UIStackView *actions = [UIStackView new];
-    actions.axis = UILayoutConstraintAxisVertical;
-    actions.spacing = 8;
-    UIButton *guide = PBButton(@"连接指南", @"book.closed", NO);
+    UIButton *guide = PBLinkButton(@"连接指南", @"book.closed");
     [guide addTarget:self action:@selector(guide) forControlEvents:UIControlEventTouchUpInside];
-    [actions addArrangedSubview:guide];
-    [content addArrangedSubview:actions];
+    [content addArrangedSubview:guide];
 
     __weak typeof(self) weak = self;
     DXBuildService.shared.changed = ^{ [weak update]; };

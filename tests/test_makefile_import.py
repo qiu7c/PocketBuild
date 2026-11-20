@@ -36,7 +36,7 @@ $(TWEAK_NAME)_FILES = $(SOURCES)
 $(TWEAK_NAME)_FILES += C/Extra.c
 $(TWEAK_NAME)_CFLAGS = -I$(THEOS_PROJECT_DIR)/Headers -D FIRST=1 -DSECOND=2 -include Prefix.h -O3 -w
 $(TWEAK_NAME)_CCFLAGS = -std=c++14
-$(TWEAK_NAME)_OBJCFLAGS = -fno-objc-arc
+$(TWEAK_NAME)_OBJCFLAGS = -fno-objc-arc -fvisibility=hidden
 $(TWEAK_NAME)_FRAMEWORKS = Foundation UIKit CoreMotion
 $(TWEAK_NAME)_LIBRARIES = sqlite3
 $(TWEAK_NAME)_LDFLAGS = -lz -framework QuartzCore
@@ -50,8 +50,27 @@ include $(THEOS_MAKE_PATH)/tweak.mk
     assert c['defines'] == ['FIRST=1', 'SECOND=2'] and 'Headers' in c['includeDirectories'], c
     assert c['forcedIncludes'] == ['Prefix.h'] and c['optimization'] == '-O3'
     assert c['cxxStandard'] == 'c++14' and c['objcArc'] is False and c['logosGenerator'] == 'internal'
+    assert c['hiddenVisibility'] is True and '-fvisibility=hidden' not in c['warningFlags']
     assert c['frameworks'] == ['Foundation', 'UIKit', 'CoreMotion', 'QuartzCore'] and c['libraries'] == ['sqlite3', 'z']
     checks.append('wildcard, nested variables, computed variable names, +=, flags, frameworks, libraries, generator, exclude stale generated .mm')
+
+    root = fixture('visibility-default', 'TWEAK_NAME = Visibility\nVisibility_FILES = A.c\nVisibility_CFLAGS = -fvisibility=hidden -fvisibility=default\n', {'A.c': 'int value;'})
+    assert prepare(root)['hiddenVisibility'] is False
+    checks.append('visibility defaults override earlier hidden setting')
+
+    root = fixture('visibility-unspecified', 'TWEAK_NAME = Visibility\nVisibility_FILES = A.c\n', {'A.c': 'int value;'})
+    assert 'hiddenVisibility' not in prepare(root)
+    checks.append('no visibility option preserves the compiler default')
+
+    root = fixture('visibility-manifest', '', {'A.c': 'int value;'})
+    manifest = {'sources': ['A.c'], 'hiddenVisibility': True}
+    (root / 'MobileCompiler.json').write_text(json.dumps(manifest))
+    assert prepare(root)['hiddenVisibility'] is True
+    manifest['hiddenVisibility'] = 'hidden'
+    (root / 'MobileCompiler.json').write_text(json.dumps(manifest))
+    error = prepare(root, ok=False)
+    assert 'hiddenVisibility' in json.dumps(error)
+    checks.append('explicit hidden visibility is preserved; a string value is rejected at import')
 
     root = fixture('flavors', '''TWEAK_NAME = Flavor
 LATE = A.c
