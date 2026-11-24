@@ -4,6 +4,7 @@
 #import "BuildBackground.h"
 #import "SourceEditor.h"
 #import "../DocumentPresentation.h"
+#import <UniformTypeIdentifiers/UniformTypeIdentifiers.h>
 
 #import "ProjectRecords.h"
 #import "Toolchains.h"
@@ -414,6 +415,33 @@ static UIViewController *BuildResult(NSString *identifier, BOOL assign);
         UIStackView *output = PBCard();
         [output addArrangedSubview:PBLabel([job[@"state"] isEqual:@"succeeded"] ? @"构建产物" : @"已生成文件",
             15, UIFontWeightSemibold, UIColor.labelColor)];
+        if (artifacts.count > 1) {
+            UIButton *copy = PBButton(@"复制全部产物", @"doc.on.doc", NO);
+            [copy addAction:[UIAction actionWithHandler:^(UIAction *action) {
+                NSMutableArray<NSItemProvider *> *items = [NSMutableArray arrayWithCapacity:artifacts.count];
+                for (NSString *file in artifacts) {
+                    NSString *filePath = [path stringByAppendingPathComponent:file];
+                    if (!TMCRegularDocument(filePath, NO)) {
+                        PBShowError(weakSelf, @"有产物已被移除，请重新打开这条构建记录。");
+                        return;
+                    }
+                    NSURL *fileURL = [NSURL fileURLWithPath:filePath];
+                    UTType *type = [UTType typeWithFilenameExtension:file.pathExtension] ?: UTTypeData;
+                    NSItemProvider *item = [NSItemProvider new];
+                    item.suggestedName = file;
+                    [item registerFileRepresentationForTypeIdentifier:type.identifier fileOptions:0
+                        visibility:NSItemProviderRepresentationVisibilityAll
+                        loadHandler:^NSProgress *(void (^completion)(NSURL *, BOOL, NSError *)) {
+                            completion(fileURL, NO, nil);
+                            return nil;
+                        }];
+                    [items addObject:item];
+                }
+                [UIPasteboard.generalPasteboard setItemProviders:items localOnly:YES expirationDate:nil];
+                PBToast(weakSelf, [NSString stringWithFormat:@"已复制 %lu 个产物", (unsigned long)items.count]);
+            }] forControlEvents:UIControlEventTouchUpInside];
+            [output addArrangedSubview:copy];
+        }
         for (NSString *file in artifacts) {
             [self addShareButtonForFile:file path:path to:output title:@"保存或分享" showName:YES];
         }

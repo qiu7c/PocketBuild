@@ -233,7 +233,22 @@ UIViewController *DXBuildHome(void) { UIViewController *c=[DXBuildHomeController
 @implementation DXBuildAppDelegate
 #if TARGET_OS_SIMULATOR
 - (void)navigationController:(UINavigationController *)navigation didShowViewController:(UIViewController *)controller animated:(BOOL)animated {
-    NSDictionary *ready=@{@"controller":NSStringFromClass(controller.class),@"width":@(controller.view.bounds.size.width),@"height":@(controller.view.bounds.size.height)};
+    UIView *page = controller.view;
+    NSMutableDictionary *ready = [@{@"controller":NSStringFromClass(controller.class),
+        @"width":@(page.bounds.size.width), @"height":@(page.bounds.size.height)} mutableCopy];
+    if ([ready[@"controller"] isEqual:@"PBStorageController"]) {
+        [page layoutIfNeeded];
+        UIView *scroll = page.subviews.firstObject;
+        for (UIView *child in scroll.subviews) {
+            if (![child isKindOfClass:UIStackView.class]) continue;
+            CGRect column = [child convertRect:child.bounds toView:page];
+            CGRect viewport = page.safeAreaLayoutGuide.layoutFrame;
+            ready[@"contentWidth"] = @(CGRectGetWidth(column));
+            ready[@"viewportWidth"] = @(CGRectGetWidth(viewport));
+            ready[@"leadingMargin"] = @(CGRectGetMinX(column) - CGRectGetMinX(viewport));
+            break;
+        }
+    }
     [[NSJSONSerialization dataWithJSONObject:ready options:0 error:nil] writeToFile:[NSTemporaryDirectory() stringByAppendingPathComponent:@"pocketbuild-ui-ready.json"] atomically:YES];
 }
 #endif
@@ -253,6 +268,7 @@ UIViewController *DXBuildHome(void) { UIViewController *c=[DXBuildHomeController
         if([name isEqual:@"guide"])root=PBWelcomeScreen(NO);
         if([name isEqual:@"tools"])root=PBToolsHome();
         if([name isEqual:@"settings"])root=PBConnectionSettings();
+        if([name isEqual:@"storage"])root=PBStoragePage();
         if([name isEqual:@"intro"])root=PBWelcomeScreen(YES);
         if([name isEqual:@"resources"]||[name isEqual:@"pairing"]){root=PBWelcomeScreen(YES);[root setValue:@([name isEqual:@"resources"]?2:3) forKey:@"page"];}
         if([name isEqual:@"running"])[DXBuildService.shared startAddress:@"127.0.0.1" port:8787];
@@ -282,7 +298,7 @@ UIViewController *DXBuildHome(void) { UIViewController *c=[DXBuildHomeController
     }
     UINavigationController *navigation = PBNavigation(root);
 #if TARGET_OS_SIMULATOR
-    if(screen!=NSNotFound&&screen+1<arguments.count&&[@[@"settings",@"tools",@"guide"] containsObject:arguments[screen+1]])[navigation setViewControllers:@[DXBuildHome(),root] animated:NO];
+    if(screen!=NSNotFound&&screen+1<arguments.count&&[@[@"settings",@"tools",@"guide",@"storage"] containsObject:arguments[screen+1]])[navigation setViewControllers:@[DXBuildHome(),root] animated:NO];
     navigation.delegate=self;
 #endif
     self.window.rootViewController=navigation;[self.window makeKeyAndVisible];return YES;

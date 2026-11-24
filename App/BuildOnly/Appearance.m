@@ -47,7 +47,8 @@ UIStackView *PBPageContent(UIView *view, NSLayoutYAxisAnchor *bottom) {
     UILayoutGuide *frame = scroll.frameLayoutGuide;
     UILayoutGuide *content = scroll.contentLayoutGuide;
     NSLayoutConstraint *preferredWidth = [stack.widthAnchor constraintEqualToAnchor:frame.widthAnchor constant:-32];
-    preferredWidth.priority = UILayoutPriorityDefaultHigh;
+    // Keep the viewport width ahead of the arranged views' intrinsic sizes.
+    preferredWidth.priority = UILayoutPriorityRequired - 1;
     [NSLayoutConstraint activateConstraints:@[
         [scroll.topAnchor constraintEqualToAnchor:safeArea.topAnchor],
         [scroll.leadingAnchor constraintEqualToAnchor:safeArea.leadingAnchor],

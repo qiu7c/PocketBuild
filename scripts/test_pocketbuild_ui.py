@@ -72,8 +72,14 @@ def launch(uid, screen, *extra):
     appeared = json.loads(ready.read_text())
     expected = {"intro":"PBWelcomeController", "guide":"PBWelcomeController", "resources":"PBWelcomeController",
                 "pairing":"PBWelcomeController", "home":"DXBuildHomeController", "running":"DXBuildHomeController",
-                "settings":"PBConnectionController", "tools":"PBToolsController"}[screen]
+                "settings":"PBConnectionController", "tools":"PBToolsController",
+                "storage":"PBStorageController"}[screen]
     assert appeared["controller"] == expected and appeared["width"] > 0, appeared
+    if screen == "storage":
+        viewport = appeared["viewportWidth"]
+        width = min(viewport - 32, 640)
+        assert abs(appeared["contentWidth"] - width) < 1, appeared
+        assert abs(appeared["leadingMargin"] - (viewport - width) / 2) < 1, appeared
 
 
 def request(code, expected=200):
@@ -103,7 +109,7 @@ def screenshot(uid, name):
 
 uid = boot(phone)
 sim("ui", uid, "appearance", "light")
-for screen in ("resources", "intro", "guide", "pairing", "home", "settings", "tools"):
+for screen in ("resources", "intro", "guide", "pairing", "home", "settings", "storage", "tools"):
     launch(uid, screen)
     screenshot(uid, "light-" + screen)
 
@@ -136,7 +142,7 @@ if small:
     sim("shutdown", uid)
     uid = boot(small)
     sim("ui", uid, "appearance", "light")
-    for screen in ("intro", "pairing", "running"):
+    for screen in ("intro", "pairing", "running", "storage"):
         launch(uid, screen, "--ui-fixed-code", CODE)
         screenshot(uid, "small-" + screen)
     sim("terminate", uid, BUNDLE)

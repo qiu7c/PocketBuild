@@ -67,6 +67,7 @@ UINavigationController *PBNavigation(UIViewController *root) {
 @property UINavigationController *current;
 @property UIVisualEffectView *bar;
 @property NSLayoutConstraint *barHeight;
+@property NSLayoutConstraint *navigationBottom;
 - (void)showTab:(NSUInteger)index;
 @end
 
@@ -158,7 +159,6 @@ UINavigationController *PBNavigation(UIViewController *root) {
         [self.view insertSubview:next.view belowSubview:self.bar];
         [NSLayoutConstraint activateConstraints:@[
             [next.view.topAnchor constraintEqualToAnchor:self.view.topAnchor],
-            [next.view.bottomAnchor constraintEqualToAnchor:self.view.bottomAnchor],
             [next.view.leadingAnchor constraintEqualToAnchor:self.view.leadingAnchor],
             [next.view.trailingAnchor constraintEqualToAnchor:self.view.trailingAnchor]
         ]];
@@ -187,27 +187,11 @@ UINavigationController *PBNavigation(UIViewController *root) {
     }
     self.bar.hidden = !visible;
     self.bar.accessibilityElementsHidden = !visible;
-    if (!visible) return;
-
-    UIView *page = self.current.topViewController.view;
-    UIScrollView *scroll = nil;
-    if ([page isKindOfClass:UIScrollView.class]) {
-        scroll = (UIScrollView *)page;
-    } else {
-        for (UIView *child in page.subviews) {
-            if (![child isKindOfClass:UIScrollView.class]) continue;
-            scroll = (UIScrollView *)child;
-            break;
-        }
-    }
-    if (!scroll) return;
-    // Keep the end of the list scrollable above the floating material.
-    UIEdgeInsets contentInsets = scroll.contentInset;
-    contentInsets.bottom = height + PBTabBarBottomMargin + 8;
-    scroll.contentInset = contentInsets;
-    UIEdgeInsets indicatorInsets = scroll.verticalScrollIndicatorInsets;
-    indicatorInsets.bottom = contentInsets.bottom;
-    scroll.verticalScrollIndicatorInsets = indicatorInsets;
+    self.navigationBottom.active = NO;
+    // Clip page content above the material so card edges cannot show through it.
+    NSLayoutYAxisAnchor *bottom = visible ? self.bar.topAnchor : self.view.bottomAnchor;
+    self.navigationBottom = [self.current.view.bottomAnchor constraintEqualToAnchor:bottom constant:visible ? -6 : 0];
+    self.navigationBottom.active = YES;
 }
 
 - (void)navigationController:(UINavigationController *)navigation
